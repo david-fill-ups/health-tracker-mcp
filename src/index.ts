@@ -1779,8 +1779,8 @@ server.tool(
     "scores candidates, and optionally enriches top candidates with WikiTree relationship data. " +
     "Returns immediately with job status; processing runs in background.",
   {
-    enrichment: z.boolean().optional().describe("Enable candidate enrichment via WikiTree relationship API (default: false)"),
-    enrichmentTopN: z.number().optional().describe("Number of top candidates to enrich (default: 5, max: 10). Use 3 or 5 for A/B testing."),
+    enrichment: z.boolean().optional().describe("Enable candidate enrichment via WikiTree relationship API (default: true)"),
+    enrichmentTopN: z.number().optional().describe("Number of top candidates to enrich (default: 3, max: 10)."),
     batchSize: z.number().optional().describe("Number of people to process per batch (default: 10, max: 50)"),
     strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 7)"),
     leadRequired: z.number().optional().describe("Required score lead over second-place candidate for strong_match (default: 3)"),
