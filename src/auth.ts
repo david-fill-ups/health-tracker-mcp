@@ -10,7 +10,7 @@ export type RequestAuthInput = { authorization?: string | null };
 export type AuthContext = {
   method: AuthMode;
   principal: string;
-  internalUserId: string;
+  internalUserId?: string;
   scopes: ReadonlySet<string>;
   accessToken?: string;
   activeProfileId?: string;
@@ -52,9 +52,9 @@ export class LocalApiKeyAuthenticator implements Authenticator {
     return {
       method: "local_api_key",
       principal: "local",
-      // The Health Tracker API derives the real user from the personal access
-      // token. This local-only label is never used as API authority.
-      internalUserId: process.env.LOCAL_INTERNAL_USER_ID?.trim() || "local-api-key-user",
+      // The API derives authority from the personal access token. This optional
+      // value is diagnostic metadata only and is never forwarded as identity.
+      internalUserId: process.env.LOCAL_INTERNAL_USER_ID?.trim() || undefined,
       scopes: new Set(["*"]),
       activeProfileId: process.env.HEALTH_TRACKER_PROFILE_ID?.trim() || undefined,
     };
@@ -89,9 +89,15 @@ export class Auth0BearerAuthenticator implements Authenticator {
       internalUserId: this.internalUserId,
       scopes: extractScopes(payload),
       accessToken: token,
-      activeProfileId: process.env.HOSTED_PROFILE_ID?.trim() || undefined,
+      activeProfileId: resolveDefaultProfileId(),
     };
   }
+}
+
+export function resolveDefaultProfileId(
+  env: Partial<Pick<NodeJS.ProcessEnv, "DEFAULT_PROFILE_ID" | "HOSTED_PROFILE_ID">> = process.env,
+): string | undefined {
+  return env.DEFAULT_PROFILE_ID?.trim() || env.HOSTED_PROFILE_ID?.trim() || undefined;
 }
 
 function extractScopes(payload: JWTPayload): Set<string> {

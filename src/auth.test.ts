@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import {
@@ -10,8 +10,11 @@ import {
   assertRuntimeMode,
   createAuthenticator,
   createCredentialProvider,
+  resolveDefaultProfileId,
 } from "./auth.js";
 import { runWithRequestContext, getRequestContext, runInvocationWithContext } from "./request-context.js";
+import { requireToolPolicy } from "./policies.js";
+import * as client from "./client.js";
 
 describe("dual authentication", () => {
   let server: Server;
@@ -63,6 +66,15 @@ describe("dual authentication", () => {
     expect(await new LocalApiCredentialProvider().getAuthorization()).toBe("Bearer ht_local");
   });
 
+  it("does not require or invent LOCAL_INTERNAL_USER_ID", async () => {
+    const configured = process.env.LOCAL_INTERNAL_USER_ID;
+    delete process.env.LOCAL_INTERNAL_USER_ID;
+    const context = await new LocalApiKeyAuthenticator().authenticate();
+    expect(context.internalUserId).toBeUndefined();
+    expect(await new LocalApiCredentialProvider().getAuthorization()).toBe("Bearer ht_local");
+    if (configured !== undefined) process.env.LOCAL_INTERNAL_USER_ID = configured;
+  });
+
   it("establishes local context for each stdio-style invocation", async () => {
     const auth = await new LocalApiKeyAuthenticator().authenticate({});
     const context = { auth, credentials: new LocalApiCredentialProvider() };
@@ -77,6 +89,45 @@ describe("dual authentication", () => {
     const context = await new Auth0BearerAuthenticator().authenticate({ authorization: `Bearer ${await token()}` });
     expect(context.internalUserId).toBe("internal-user");
     expect(context.scopes.has("health:read")).toBe(true);
+  });
+
+  it("uses DEFAULT_PROFILE_ID as initial selection with legacy fallback", async () => {
+    expect(resolveDefaultProfileId({ DEFAULT_PROFILE_ID: " preferred ", HOSTED_PROFILE_ID: "legacy" })).toBe("preferred");
+    expect(resolveDefaultProfileId({ DEFAULT_PROFILE_ID: " ", HOSTED_PROFILE_ID: " legacy " })).toBe("legacy");
+    expect(resolveDefaultProfileId({})).toBeUndefined();
+    process.env.DEFAULT_PROFILE_ID = "profile-default";
+    process.env.HOSTED_PROFILE_ID = "profile-legacy";
+    let context = await new Auth0BearerAuthenticator().authenticate({ authorization: `Bearer ${await token()}` });
+    expect(context.activeProfileId).toBe("profile-default");
+
+    delete process.env.DEFAULT_PROFILE_ID;
+    context = await new Auth0BearerAuthenticator().authenticate({ authorization: `Bearer ${await token()}` });
+    expect(context.activeProfileId).toBe("profile-legacy");
+    delete process.env.HOSTED_PROFILE_ID;
+  });
+
+  it("treats the default profile as selection while explicit IDs go to API RBAC", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id: "explicit-profile" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const context = {
+      auth: {
+        method: "oauth_bearer" as const,
+        principal: "hosted",
+        internalUserId: "internal-user",
+        scopes: new Set(["health:read"]),
+        accessToken: "oauth-token",
+        activeProfileId: "default-profile",
+      },
+      credentials: new OAuthPassthroughCredentialProvider(),
+    };
+    await runWithRequestContext(context, () => client.getProfile("explicit-profile"));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/api/profiles/explicit-profile");
+    expect(String(url)).not.toContain("default-profile");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer oauth-token");
+    fetchMock.mockRestore();
   });
 
   it("requires an inbound bearer token in hosted OAuth mode", async () => {
@@ -106,6 +157,18 @@ describe("dual authentication", () => {
     const authorizer = new PolicyAuthorizer();
     expect(() => authorizer.authorize(context, { domain: "health", impact: "write", requiredScopes: ["health:write"], hostedEnabled: true })).toThrow("Missing required scope");
     expect(() => authorizer.authorize(context, { domain: "health", impact: "read", requiredScopes: ["health:read"], hostedEnabled: false })).toThrow("disabled");
+  });
+
+  it("allows hosted profile selection as a read-scoped operation", () => {
+    expect(requireToolPolicy("switch_profile")).toMatchObject({
+      impact: "read",
+      requiredScopes: ["health:read"],
+      hostedEnabled: true,
+    });
+    expect(requireToolPolicy("get_active_profile")).toMatchObject({
+      impact: "read",
+      hostedEnabled: true,
+    });
   });
 
   it("isolates concurrent request state and ignores caller identity fields", async () => {

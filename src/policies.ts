@@ -5,11 +5,12 @@ const genealogy = `list_family_members create_family_member get_family_member up
 const system = `onboard`.split(" ");
 
 const destructive = new Set(`delete_profile regenerate_calendar_token grant_profile_access update_profile_access revoke_profile_access import_profile delete_relationship delete_condition delete_allergy delete_medication delete_medication_log delete_visit delete_vaccination delete_dose delete_health_metric delete_doctor delete_facility delete_location delete_insurance delete_portal delete_family_member delete_person delete_person_condition delete_person_relationship propagate_relationships delete_family_unit remove_family_unit_member replace_person delete_external_identity delete_person_fact sync_apply queue_wikitree_matching link_wikitree_candidate reject_wikitree_candidate reset_wikitree_no_matches reset_wikitree_non_final start_wikitree_match_job pause_wikitree_match_job resume_wikitree_match_job cancel_wikitree_match_job`.split(" "));
-const hostedDisabled = new Set([...destructive, "switch_profile", "get_active_profile", "onboard"]);
+const hostedDisabled = new Set([...destructive, "onboard"]);
 const readPrefixes = ["list_", "get_", "search_", "check_", "compare_", "export_", "wikitree_search", "wikitree_preview", "sync_preview"];
 
 function impactFor(name: string): ToolImpact {
   if (destructive.has(name)) return "destructive";
+  if (name === "switch_profile" || name === "get_active_profile") return "read";
   return readPrefixes.some((prefix) => name.startsWith(prefix)) ? "read" : "write";
 }
 

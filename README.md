@@ -18,7 +18,7 @@ npm start
 ```
 
 Claude and Codex configurations continue to launch `node dist/index.js` and pass these environment variables. The personal access token is forwarded as a bearer credential exactly as before.
-`LOCAL_INTERNAL_USER_ID` is optional and diagnostic only; the API derives the authoritative user from the personal access token record.
+`LOCAL_INTERNAL_USER_ID` is optional diagnostic or consistency metadata only. The API derives the authoritative user from the personal access token record. The MCP neither invents nor forwards a local internal user ID as authority. If future consistency validation compares this value with an API-reported identity, a mismatch must fail closed.
 
 ## Hosted mode on Vercel
 
@@ -36,7 +36,7 @@ OAUTH_AUDIENCE=https://mcp.health-tracker.example
 OAUTH_JWKS_URI=https://<tenant>.us.auth0.com/.well-known/jwks.json
 OAUTH_ALLOWED_SUB=google-oauth2|<immutable-auth0-sub>
 HEALTH_TRACKER_INTERNAL_USER_ID=<health-tracker-user-id>
-HOSTED_PROFILE_ID=<optional-fixed-profile-id>
+DEFAULT_PROFILE_ID=<optional-initial-profile-id>
 OAUTH_CLOCK_TOLERANCE_SECONDS=60
 AUTH_LOG_HMAC_KEY=<32-or-more-random-bytes>
 ```
@@ -91,4 +91,18 @@ For a hosted local smoke test, set hosted variables against a test Auth0 tenant,
 
 After deployment, repeat against `https://<project>.vercel.app/mcp`, check `/.well-known/oauth-protected-resource`, then confirm the Health Tracker audit trail records the mapped internal user. Never paste production tokens into shell history or logs.
 
-Destructive, access-administration, import, reset, profile-switching, and long-running job-control tools are disabled in hosted mode by default. Long-running genealogy state already resides in the Health Tracker database; hosted execution must use a separately scheduled durable worker before those start/resume tools are enabled.
+Destructive, access-administration, import, reset, and long-running job-control tools are disabled in hosted mode by default. Long-running genealogy state already resides in the Health Tracker database; hosted execution must use a separately scheduled durable worker before those start/resume tools are enabled.
+
+### Profile selection and authorization
+
+`DEFAULT_PROFILE_ID` controls only the initial active profile selected when a hosted MCP request starts. It is not a confinement boundary. The authenticated internal user's Health Tracker profile RBAC permissions define the complete set of profiles the MCP can access. `list_profiles` returns that RBAC-filtered set, and every explicit `profileId` remains subject to authorization by the Health Tracker API.
+
+`HOSTED_PROFILE_ID` remains a deprecated, temporary compatibility alias used only when `DEFAULT_PROFILE_ID` is unset. Neither variable restricts the MCP to one profile. `switch_profile` checks the requested profile through the API before changing request-scoped selection; stateless hosted calls must not rely on that selection persisting into a later HTTP request. Explicit profile IDs remain protected by API RBAC.
+
+## Manual deployment runbook
+
+1. In the Auth0 dashboard, configure the tenant, Google connection, API audience, RS256, scopes, and ChatGPT callback URL.
+2. In the Health Tracker Vercel project, configure OAuth validation, internal-user mapping, and `RATE_LIMIT_HMAC_KEY`, then deploy Health Tracker.
+3. In the MCP Vercel project, configure hosted transport and OAuth variables. Set `DEFAULT_PROFILE_ID` only when an initial selection is useful; do not treat it as authorization. Migrate any existing `HOSTED_PROFILE_ID` value to `DEFAULT_PROFILE_ID`.
+4. Deploy the MCP and verify `/mcp`, protected-resource metadata, the unauthenticated challenge, and read-only OAuth calls.
+5. Add the `/mcp` URL as a ChatGPT custom app, complete Google sign-in, test RBAC-filtered reads, review redacted logs, and grant write scopes only after manual review.

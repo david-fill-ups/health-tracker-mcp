@@ -116,6 +116,8 @@ server.tool(
   "Set the active profile for subsequent calls. Most tools operate on the active profile.",
   { profileId: z.string().describe("Profile ID to make active") },
   async ({ profileId }) => {
+    // Selection is not authorization: force the API to apply profile RBAC first.
+    await client.getProfile(profileId);
     client.setActiveProfileId(profileId);
     return ok({ activeProfileId: profileId });
   },
