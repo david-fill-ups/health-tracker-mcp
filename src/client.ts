@@ -690,6 +690,418 @@ export async function createFamilyCondition(
 }
 
 // ---------------------------------------------------------------------------
+// Persons (unified Person model — replaces Family Members + Profile Relationships)
+// ---------------------------------------------------------------------------
+
+export async function listPersons(): Promise<unknown> {
+  return request("GET", withProfile("/api/persons"));
+}
+
+export async function createPerson(data: {
+  ownerProfileId: string;
+  name: string;
+  sex?: string;
+  dateOfBirth?: string;
+  dateOfDeath?: string;
+  causeOfDeath?: string;
+  notes?: string;
+  imageData?: string;
+  relationship?: string;
+  generation?: number;
+  side?: string;
+  biological?: boolean;
+}): Promise<unknown> {
+  return request("POST", "/api/persons", data);
+}
+
+export async function getPerson(id: string): Promise<unknown> {
+  return request("GET", `/api/persons/${id}`);
+}
+
+export async function updatePerson(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return request("PUT", `/api/persons/${id}`, data);
+}
+
+export async function deletePerson(id: string): Promise<unknown> {
+  return request("DELETE", `/api/persons/${id}`);
+}
+
+export async function listPersonConditions(personId: string): Promise<unknown> {
+  return request("GET", `/api/persons/${personId}/conditions`);
+}
+
+export async function createPersonCondition(
+  personId: string,
+  data: { name: string; notes?: string },
+): Promise<unknown> {
+  return request("POST", `/api/persons/${personId}/conditions`, data);
+}
+
+export async function updatePersonCondition(
+  personId: string,
+  conditionId: string,
+  data: { name?: string; notes?: string },
+): Promise<unknown> {
+  return request("PUT", `/api/persons/${personId}/conditions/${conditionId}`, data);
+}
+
+export async function deletePersonCondition(
+  personId: string,
+  conditionId: string,
+): Promise<unknown> {
+  return request("DELETE", `/api/persons/${personId}/conditions/${conditionId}`);
+}
+
+export async function getPersonRelationships(personId: string): Promise<unknown> {
+  return request("GET", `/api/persons/${personId}/relationships`);
+}
+
+export async function getPersonFamilyGraph(
+  personId: string,
+  maxDepth?: number,
+): Promise<unknown> {
+  const params = maxDepth ? `?maxDepth=${maxDepth}` : "";
+  return request("GET", `/api/persons/${personId}/family-graph${params}`);
+}
+
+export async function createPersonRelationship(data: {
+  fromPersonId: string;
+  toPersonId: string;
+  relationship: string;
+  generation?: number;
+  side?: string;
+  biological?: boolean;
+}): Promise<unknown> {
+  return request("POST", "/api/person-relationships", data);
+}
+
+export async function updatePersonRelationship(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<unknown> {
+  return request("PUT", `/api/person-relationships/${id}`, data);
+}
+
+export async function deletePersonRelationship(id: string): Promise<unknown> {
+  return request("DELETE", `/api/person-relationships/${id}`);
+}
+
+/**
+ * @deprecated No-op — relationships are now derived at query time via FamilyUnit traversal.
+ */
+export async function propagateRelationships(
+  personId: string,
+): Promise<unknown> {
+  return request("POST", `/api/person-relationships/propagate`, { personId });
+}
+
+// ---------------------------------------------------------------------------
+// Family Units
+// ---------------------------------------------------------------------------
+
+export async function listFamilyUnits(personId: string): Promise<unknown> {
+  return request("GET", `/api/family-units?personId=${encodeURIComponent(personId)}`);
+}
+
+export async function createFamilyUnit(data: {
+  profileId: string;
+  motherId?: string;
+  fatherId?: string;
+}): Promise<unknown> {
+  return request("POST", "/api/family-units", data);
+}
+
+export async function getFamilyUnit(id: string): Promise<unknown> {
+  return request("GET", `/api/family-units/${id}`);
+}
+
+export async function updateFamilyUnit(
+  id: string,
+  data: { motherId?: string; fatherId?: string },
+): Promise<unknown> {
+  return request("PUT", `/api/family-units/${id}`, data);
+}
+
+export async function deleteFamilyUnit(id: string): Promise<unknown> {
+  return request("DELETE", `/api/family-units/${id}`);
+}
+
+export async function addFamilyUnitMember(
+  familyUnitId: string,
+  data: { personId: string },
+): Promise<unknown> {
+  return request("POST", `/api/family-units/${familyUnitId}/members`, data);
+}
+
+export async function removeFamilyUnitMember(
+  familyUnitId: string,
+  personId: string,
+): Promise<unknown> {
+  return request("DELETE", `/api/family-units/${familyUnitId}/members`, { personId });
+}
+
+export async function replacePerson(
+  oldPersonId: string,
+  newPersonId: string,
+): Promise<unknown> {
+  return request("POST", `/api/persons/${oldPersonId}/replace`, { newPersonId });
+}
+
+export async function getRelationshipSuggestions(
+  personId: string,
+): Promise<unknown> {
+  return request("GET", `/api/persons/${personId}/relationship-suggestions`);
+}
+
+// ---------------------------------------------------------------------------
+// External Identities
+// ---------------------------------------------------------------------------
+
+export async function listExternalIdentities(
+  personId: string,
+): Promise<unknown> {
+  return request("GET", `/api/persons/${personId}/external-identities`);
+}
+
+export async function createExternalIdentity(
+  personId: string,
+  data: { provider: string; externalId: string; externalUrl?: string },
+): Promise<unknown> {
+  return request("POST", `/api/persons/${personId}/external-identities`, data);
+}
+
+export async function updateExternalIdentity(
+  personId: string,
+  identityId: string,
+  data: { externalId?: string; externalUrl?: string | null },
+): Promise<unknown> {
+  return request("PUT", `/api/persons/${personId}/external-identities/${identityId}`, data);
+}
+
+export async function deleteExternalIdentity(
+  personId: string,
+  identityId: string,
+): Promise<unknown> {
+  return request("DELETE", `/api/persons/${personId}/external-identities/${identityId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Person Facts
+// ---------------------------------------------------------------------------
+
+export async function listPersonFacts(
+  personId: string,
+  factType?: string,
+): Promise<unknown> {
+  const params = factType ? qs({ factType }) : "";
+  return request("GET", `/api/persons/${personId}/facts${params}`);
+}
+
+export async function createPersonFact(
+  personId: string,
+  data: {
+    factType: string;
+    value: string;
+    startDate?: string;
+    endDate?: string;
+    location?: string;
+    sourceProvider?: string;
+    externalFactId?: string;
+    notes?: string;
+  },
+): Promise<unknown> {
+  return request("POST", `/api/persons/${personId}/facts`, data);
+}
+
+export async function updatePersonFact(
+  personId: string,
+  factId: string,
+  data: {
+    factType?: string;
+    value?: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    location?: string | null;
+    sourceProvider?: string | null;
+    externalFactId?: string | null;
+    notes?: string | null;
+  },
+): Promise<unknown> {
+  return request("PUT", `/api/persons/${personId}/facts/${factId}`, data);
+}
+
+export async function deletePersonFact(
+  personId: string,
+  factId: string,
+): Promise<unknown> {
+  return request("DELETE", `/api/persons/${personId}/facts/${factId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Genealogy Sync
+// ---------------------------------------------------------------------------
+
+export async function getSyncPreview(personId: string): Promise<unknown> {
+  return request("POST", `/api/persons/${personId}/sync/preview`);
+}
+
+export async function applySyncChanges(
+  personId: string,
+  data: {
+    personId: string;
+    fields: Record<string, string>;
+    factIndices: number[];
+    portraitProvider: string | null;
+    relationships: Array<{
+      provider: string;
+      index: number;
+      localPersonId: string | null;
+    }>;
+  }
+): Promise<unknown> {
+  return request("POST", `/api/persons/${personId}/sync/apply`, data);
+}
+
+export async function getProviderCapabilities(): Promise<unknown> {
+  return request("GET", "/api/genealogy/providers");
+}
+
+export async function searchWikiTree(params: {
+  firstName?: string;
+  lastName: string;
+  birthDate?: string;
+  deathDate?: string;
+  limit?: number;
+}): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/search", params);
+}
+
+export async function previewWikiTreeLink(wikiTreeId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/preview", { wikiTreeId });
+}
+
+// ---------------------------------------------------------------------------
+// WikiTree Matching Queue
+// ---------------------------------------------------------------------------
+
+export async function getWikiTreeMatchQueue(opts?: {
+  status?: string;
+  summary?: boolean;
+}): Promise<unknown> {
+  const params: Record<string, string> = {};
+  if (opts?.status) params.status = opts.status;
+  if (opts?.summary) params.summary = "true";
+  return request("GET", `/api/genealogy/wikitree/queue${qs(params)}`);
+}
+
+export async function buildWikiTreeMatchQueue(): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue");
+}
+
+export async function searchWikiTreeCandidates(opts?: {
+  personId?: string;
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string;
+  deathDate?: string;
+  wikiTreeId?: string;
+}): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/search", opts ?? {});
+}
+
+export async function linkWikiTreeCandidate(
+  personId: string,
+  wikiTreeId: string
+): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/link", {
+    personId,
+    wikiTreeId,
+  });
+}
+
+export async function rejectWikiTreeCandidate(
+  personId: string,
+  wikiTreeId: string
+): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/reject", {
+    personId,
+    wikiTreeId,
+  });
+}
+
+export async function resetWikiTreeNoMatches(): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/reset");
+}
+
+export async function resetWikiTreeNonFinal(): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/reset", { extended: true });
+}
+
+// ---------------------------------------------------------------------------
+// WikiTree Matching Jobs
+// ---------------------------------------------------------------------------
+
+export async function startWikiTreeMatchJob(opts?: {
+  enrichment?: boolean;
+  enrichmentTopN?: number;
+  batchSize?: number;
+  strongThreshold?: number;
+  leadRequired?: number;
+}): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/job", {
+    action: "start",
+    ...opts,
+  });
+}
+
+export async function pauseWikiTreeMatchJob(jobId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/job", {
+    action: "pause",
+    jobId,
+  });
+}
+
+export async function resumeWikiTreeMatchJob(jobId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/job", {
+    action: "resume",
+    jobId,
+  });
+}
+
+export async function cancelWikiTreeMatchJob(jobId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/job", {
+    action: "cancel",
+    jobId,
+  });
+}
+
+export async function getWikiTreeMatchJobStatus(jobId?: string): Promise<unknown> {
+  const params: Record<string, string> = {};
+  if (jobId) params.jobId = jobId;
+  return request("GET", `/api/genealogy/wikitree/queue/job${qs(params)}`);
+}
+
+export async function listWikiTreeMatchJobs(): Promise<unknown> {
+  return request("GET", "/api/genealogy/wikitree/queue/job?list=true");
+}
+
+export async function compareWikiTreeMatchJobs(
+  baselineJobId: string,
+  comparisonJobId: string,
+): Promise<unknown> {
+  return request(
+    "GET",
+    `/api/genealogy/wikitree/queue/job${qs({
+      compareBaseline: baselineJobId,
+      compareComparison: comparisonJobId,
+    })}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // NPI Search
 // ---------------------------------------------------------------------------
 

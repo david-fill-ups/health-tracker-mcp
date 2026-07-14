@@ -22,7 +22,10 @@ function clean(obj: Record<string, unknown>): Record<string, unknown> {
 
 // Helper: wrap tool handler result
 function ok(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+  const text = data === undefined || data === null
+    ? "Deleted successfully."
+    : JSON.stringify(data, null, 2);
+  return { content: [{ type: "text" as const, text }] };
 }
 
 // ==========================================================================
@@ -179,7 +182,7 @@ server.tool(
 
 server.tool(
   "list_relationships",
-  "List profile-to-profile relationships (e.g. parent/child links between profiles). Uses the active profile.",
+  "[Deprecated: use person relationships] List profile-to-profile relationships. Uses the active profile.",
   {
     includeInherited: z.string().optional().describe("Include inherited relationships (true/false)"),
   },
@@ -188,7 +191,7 @@ server.tool(
 
 server.tool(
   "create_relationship",
-  "Create a relationship between two profiles.",
+  "[Deprecated: use create_person_relationship] Create a relationship between two profiles.",
   {
     toProfileId: z.string().describe("Target profile ID"),
     relationship: z.string().describe("Relationship type"),
@@ -207,7 +210,7 @@ server.tool(
 
 server.tool(
   "update_relationship",
-  "Update an existing relationship.",
+  "[Deprecated: use update_person_relationship] Update an existing relationship.",
   {
     id: z.string().describe("Relationship ID"),
     relationship: z.string().optional().describe("Relationship type"),
@@ -218,7 +221,7 @@ server.tool(
 
 server.tool(
   "delete_relationship",
-  "Delete a relationship.",
+  "[Deprecated: use delete_person_relationship] Delete a relationship.",
   { id: z.string().describe("Relationship ID") },
   async ({ id }) => ok(await client.deleteRelationship(id)),
 );
@@ -1005,27 +1008,33 @@ server.tool(
 );
 
 // ==========================================================================
-// Family Members
+// Family Members (deprecated — use Person tools below)
 // ==========================================================================
 
 server.tool(
   "list_family_members",
-  "List all family members in the active profile's family history.",
+  "[Deprecated: use list_people] List all family members in the active profile's family history.",
   {},
   async () => ok(await client.listFamilyMembers()),
 );
 
 server.tool(
   "create_family_member",
-  "Add a family member to the active profile's family history.",
+  "[Deprecated: use create_person] Add a family member to the active profile's family history.",
   {
     name: z.string().describe("Family member's name"),
     relationship: z.enum([
       "MOTHER", "FATHER", "SISTER", "BROTHER",
       "GRANDMOTHER", "GRANDFATHER", "AUNT", "UNCLE",
-      "COUSIN", "HALF_SIBLING", "CHILD", "GRANDCHILD", "OTHER",
+      "HALF_BROTHER", "HALF_SISTER", "SON", "DAUGHTER",
+      "STEP_FATHER", "STEP_MOTHER", "STEP_BROTHER", "STEP_SISTER",
+      "STEP_SON", "STEP_DAUGHTER",
+      "FATHER_IN_LAW", "MOTHER_IN_LAW", "BROTHER_IN_LAW", "SISTER_IN_LAW",
+      "SON_IN_LAW", "DAUGHTER_IN_LAW",
+      "SPOUSE", "OTHER",
     ]).describe("Relationship to the profile"),
-    side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side of family"),
+    side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side of family (for grandparents, aunts, uncles)"),
+    biological: z.boolean().optional().describe("Whether this is a biological relationship (default true). Non-biological members' conditions are not surfaced in medical family history."),
     dateOfBirth: z.string().optional().describe("Date of birth (YYYY-MM-DD)"),
     dateOfDeath: z.string().optional().describe("Date of death (YYYY-MM-DD)"),
     causeOfDeath: z.string().optional().describe("Cause of death"),
@@ -1038,23 +1047,29 @@ server.tool(
 
 server.tool(
   "get_family_member",
-  "Get details for a specific family member.",
+  "[Deprecated: use get_person] Get details for a specific family member.",
   { id: z.string().describe("Family member ID") },
   async ({ id }) => ok(await client.getFamilyMember(id)),
 );
 
 server.tool(
   "update_family_member",
-  "Update a family member's information.",
+  "[Deprecated: use update_person] Update a family member's information.",
   {
     id: z.string().describe("Family member ID"),
     name: z.string().optional().describe("Name"),
     relationship: z.enum([
       "MOTHER", "FATHER", "SISTER", "BROTHER",
       "GRANDMOTHER", "GRANDFATHER", "AUNT", "UNCLE",
-      "COUSIN", "HALF_SIBLING", "CHILD", "GRANDCHILD", "OTHER",
+      "HALF_BROTHER", "HALF_SISTER", "SON", "DAUGHTER",
+      "STEP_FATHER", "STEP_MOTHER", "STEP_BROTHER", "STEP_SISTER",
+      "STEP_SON", "STEP_DAUGHTER",
+      "FATHER_IN_LAW", "MOTHER_IN_LAW", "BROTHER_IN_LAW", "SISTER_IN_LAW",
+      "SON_IN_LAW", "DAUGHTER_IN_LAW",
+      "SPOUSE", "OTHER",
     ]).optional().describe("Relationship"),
     side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side"),
+    biological: z.boolean().optional().describe("Whether this is a biological relationship"),
     dateOfBirth: z.string().optional().describe("Date of birth"),
     dateOfDeath: z.string().optional().describe("Date of death"),
     causeOfDeath: z.string().optional().describe("Cause of death"),
@@ -1066,21 +1081,21 @@ server.tool(
 
 server.tool(
   "delete_family_member",
-  "Remove a family member from the active profile's history.",
+  "[Deprecated: use delete_person] Remove a family member from the active profile's history.",
   { id: z.string().describe("Family member ID") },
   async ({ id }) => ok(await client.deleteFamilyMember(id)),
 );
 
 server.tool(
   "list_family_conditions",
-  "List medical conditions for a family member.",
+  "[Deprecated: use list_person_conditions] List medical conditions for a family member.",
   { familyMemberId: z.string().describe("Family member ID") },
   async ({ familyMemberId }) => ok(await client.listFamilyConditions(familyMemberId)),
 );
 
 server.tool(
   "create_family_condition",
-  "Add a medical condition to a family member's record.",
+  "[Deprecated: use create_person_condition] Add a medical condition to a family member's record.",
   {
     familyMemberId: z.string().describe("Family member ID"),
     name: z.string().describe("Condition name"),
@@ -1094,6 +1109,447 @@ server.tool(
         notes,
       }),
     ),
+);
+
+// ==========================================================================
+// Persons (unified identity model — replaces Family Members)
+// ==========================================================================
+
+const RELATIONSHIP_TYPES = [
+  "FATHER", "MOTHER", "SON", "DAUGHTER", "BROTHER", "SISTER",
+  "HALF_BROTHER", "HALF_SISTER", "GRANDFATHER", "GRANDMOTHER",
+  "GRANDSON", "GRANDDAUGHTER", "AUNT", "UNCLE", "NIECE", "NEPHEW",
+  "COUSIN", "SPOUSE",
+  "STEP_FATHER", "STEP_MOTHER", "STEP_SON", "STEP_DAUGHTER",
+  "STEP_BROTHER", "STEP_SISTER",
+  "FATHER_IN_LAW", "MOTHER_IN_LAW", "SON_IN_LAW", "DAUGHTER_IN_LAW",
+  "BROTHER_IN_LAW", "SISTER_IN_LAW",
+  "OTHER",
+] as const;
+
+server.tool(
+  "list_people",
+  "List all persons (family members and linked profiles) for the active profile.",
+  {},
+  async () => ok(await client.listPersons()),
+);
+
+server.tool(
+  "create_person",
+  "Create a person in the family tree. Optionally creates a relationship to the active profile's person.",
+  {
+    name: z.string().describe("Person's name"),
+    sex: z.enum(["MALE", "FEMALE", "OTHER"]).optional().describe("Sex"),
+    dateOfBirth: z.string().optional().describe("Date of birth (YYYY-MM-DD)"),
+    dateOfDeath: z.string().optional().describe("Date of death (YYYY-MM-DD)"),
+    causeOfDeath: z.string().optional().describe("Cause of death"),
+    notes: z.string().optional().describe("Notes"),
+    imageData: z.string().optional().describe("Photo (base64)"),
+    relationship: z.enum(RELATIONSHIP_TYPES).optional().describe("Relationship to the active profile's person"),
+    generation: z.number().optional().describe("Generation relative to profile: 1=parent, 2=grandparent, -1=child, 0=same gen"),
+    side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side of family"),
+    biological: z.boolean().optional().describe("Whether biological (default true)"),
+  },
+  async (args) =>
+    ok(await client.createPerson({ ownerProfileId: pid(), ...args })),
+);
+
+server.tool(
+  "get_person",
+  "Get details for a specific person.",
+  { id: z.string().describe("Person ID") },
+  async ({ id }) => ok(await client.getPerson(id)),
+);
+
+server.tool(
+  "update_person",
+  "Update a person's information.",
+  {
+    id: z.string().describe("Person ID"),
+    name: z.string().optional().describe("Name"),
+    sex: z.enum(["MALE", "FEMALE", "OTHER"]).optional().describe("Sex"),
+    dateOfBirth: z.string().optional().describe("Date of birth (YYYY-MM-DD)"),
+    dateOfDeath: z.string().optional().describe("Date of death (YYYY-MM-DD)"),
+    causeOfDeath: z.string().optional().describe("Cause of death"),
+    notes: z.string().optional().describe("Notes"),
+    imageData: z.string().optional().describe("Photo (base64)"),
+  },
+  async ({ id, ...rest }) => ok(await client.updatePerson(id, clean(rest))),
+);
+
+server.tool(
+  "delete_person",
+  "Delete a person from the family tree. Cannot delete persons linked to a profile.",
+  { id: z.string().describe("Person ID") },
+  async ({ id }) => ok(await client.deletePerson(id)),
+);
+
+// ==========================================================================
+// Person Conditions
+// ==========================================================================
+
+server.tool(
+  "list_person_conditions",
+  "List medical conditions for a person (family member).",
+  { personId: z.string().describe("Person ID") },
+  async ({ personId }) => ok(await client.listPersonConditions(personId)),
+);
+
+server.tool(
+  "create_person_condition",
+  "Add a medical condition to a person's record.",
+  {
+    personId: z.string().describe("Person ID"),
+    name: z.string().describe("Condition name"),
+    notes: z.string().optional().describe("Notes"),
+  },
+  async ({ personId, name, notes }) =>
+    ok(await client.createPersonCondition(personId, { name, notes })),
+);
+
+server.tool(
+  "update_person_condition",
+  "Update a person's medical condition.",
+  {
+    personId: z.string().describe("Person ID"),
+    conditionId: z.string().describe("Condition ID"),
+    name: z.string().optional().describe("Condition name"),
+    notes: z.string().optional().describe("Notes"),
+  },
+  async ({ personId, conditionId, ...rest }) =>
+    ok(await client.updatePersonCondition(personId, conditionId, clean(rest) as { name?: string; notes?: string })),
+);
+
+server.tool(
+  "delete_person_condition",
+  "Delete a medical condition from a person's record.",
+  {
+    personId: z.string().describe("Person ID"),
+    conditionId: z.string().describe("Condition ID"),
+  },
+  async ({ personId, conditionId }) =>
+    ok(await client.deletePersonCondition(personId, conditionId)),
+);
+
+// ==========================================================================
+// Person Relationships
+// ==========================================================================
+
+server.tool(
+  "get_person_relationships",
+  "List relationships for a specific person.",
+  { personId: z.string().describe("Person ID") },
+  async ({ personId }) => ok(await client.getPersonRelationships(personId)),
+);
+
+server.tool(
+  "get_person_family_graph",
+  "Get the full family graph for a person, derived via BFS traversal.",
+  {
+    personId: z.string().describe("Person ID"),
+    maxDepth: z.number().optional().describe("Maximum traversal depth (default 5)"),
+  },
+  async ({ personId, maxDepth }) =>
+    ok(await client.getPersonFamilyGraph(personId, maxDepth)),
+);
+
+server.tool(
+  "create_person_relationship",
+  "Create a relationship between two persons. An inverse relationship is auto-created.",
+  {
+    fromPersonId: z.string().describe("Source person ID"),
+    toPersonId: z.string().describe("Target person ID"),
+    relationship: z.enum(RELATIONSHIP_TYPES).describe("Relationship type (from → to)"),
+    generation: z.number().optional().describe("Generation offset: 1=parent, 2=grandparent, -1=child, 0=same gen"),
+    side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side of family"),
+    biological: z.boolean().optional().describe("Whether biological (default true)"),
+  },
+  async (args) => ok(await client.createPersonRelationship(args)),
+);
+
+server.tool(
+  "update_person_relationship",
+  "Update a person relationship.",
+  {
+    id: z.string().describe("Relationship ID"),
+    relationship: z.enum(RELATIONSHIP_TYPES).optional().describe("Relationship type"),
+    generation: z.number().optional().describe("Generation offset"),
+    side: z.enum(["MATERNAL", "PATERNAL"]).optional().describe("Side of family"),
+    biological: z.boolean().optional().describe("Whether biological"),
+  },
+  async ({ id, ...rest }) =>
+    ok(await client.updatePersonRelationship(id, clean(rest))),
+);
+
+server.tool(
+  "delete_person_relationship",
+  "Delete a person relationship (and its auto-created inverse).",
+  { id: z.string().describe("Relationship ID") },
+  async ({ id }) => ok(await client.deletePersonRelationship(id)),
+);
+
+server.tool(
+  "propagate_relationships",
+  "[Deprecated — no-op] Biological relationships are now derived at query time via FamilyUnit traversal. " +
+    "This tool exists for backward compatibility but does nothing. " +
+    "Use create_family_unit and add_family_unit_member to model parent-child structure instead.",
+  {
+    personId: z.string().describe("Person ID (ignored — this tool is a no-op)"),
+  },
+  async ({ personId }) =>
+    ok(await client.propagateRelationships(personId)),
+);
+
+server.tool(
+  "get_relationship_suggestions",
+  "Get suggested relationships for a person that need user confirmation. " +
+    "Identifies plausible but uncertain relationships between the person's " +
+    "family members — e.g., 'this grandfather might be your father's father.' " +
+    "Does not create any records; returns suggestions for review.",
+  {
+    personId: z.string().describe("Person ID to get suggestions for"),
+  },
+  async ({ personId }) =>
+    ok(await client.getRelationshipSuggestions(personId)),
+);
+
+// ==========================================================================
+// Family Units (parent-child structure for biological relationships)
+// ==========================================================================
+
+server.tool(
+  "list_family_units",
+  "List all family units that a person belongs to (as parent or child). " +
+    "A family unit represents a parent pair (mother + father) and their children.",
+  {
+    personId: z.string().describe("Person ID to list family units for"),
+  },
+  async ({ personId }) => ok(await client.listFamilyUnits(personId)),
+);
+
+server.tool(
+  "create_family_unit",
+  "Create a new family unit (parent pair). Children are added separately via add_family_unit_member. " +
+    "A family unit represents one set of parents. At least one of motherId or fatherId should be provided.",
+  {
+    motherId: z.string().optional().describe("Mother's person ID"),
+    fatherId: z.string().optional().describe("Father's person ID"),
+  },
+  async (args) =>
+    ok(await client.createFamilyUnit({ profileId: pid(), ...args })),
+);
+
+server.tool(
+  "get_family_unit",
+  "Get details for a specific family unit, including its parents and members (children).",
+  { id: z.string().describe("Family unit ID") },
+  async ({ id }) => ok(await client.getFamilyUnit(id)),
+);
+
+server.tool(
+  "update_family_unit",
+  "Update a family unit's parent references.",
+  {
+    id: z.string().describe("Family unit ID"),
+    motherId: z.string().optional().describe("New mother person ID"),
+    fatherId: z.string().optional().describe("New father person ID"),
+  },
+  async ({ id, ...rest }) =>
+    ok(await client.updateFamilyUnit(id, clean(rest) as { motherId?: string; fatherId?: string })),
+);
+
+server.tool(
+  "delete_family_unit",
+  "Delete a family unit. Members (children) are not deleted, only the unit itself.",
+  { id: z.string().describe("Family unit ID") },
+  async ({ id }) => ok(await client.deleteFamilyUnit(id)),
+);
+
+server.tool(
+  "add_family_unit_member",
+  "Add a child (person) to a family unit.",
+  {
+    familyUnitId: z.string().describe("Family unit ID"),
+    personId: z.string().describe("Person ID to add as a child/member"),
+  },
+  async ({ familyUnitId, personId }) =>
+    ok(await client.addFamilyUnitMember(familyUnitId, { personId })),
+);
+
+server.tool(
+  "remove_family_unit_member",
+  "Remove a child (person) from a family unit.",
+  {
+    familyUnitId: z.string().describe("Family unit ID"),
+    personId: z.string().describe("Person ID to remove"),
+  },
+  async ({ familyUnitId, personId }) =>
+    ok(await client.removeFamilyUnitMember(familyUnitId, personId)),
+);
+
+server.tool(
+  "replace_person",
+  "Replace a placeholder person (e.g. 'Unknown Mother') with an existing real person. " +
+    "Updates all FamilyUnit references, merges conditions, and deletes the old placeholder.",
+  {
+    oldPersonId: z.string().describe("ID of the placeholder person to replace"),
+    newPersonId: z.string().describe("ID of the real person to replace it with"),
+  },
+  async ({ oldPersonId, newPersonId }) =>
+    ok(await client.replacePerson(oldPersonId, newPersonId)),
+);
+
+// ==========================================================================
+// External Identities
+// ==========================================================================
+
+server.tool(
+  "list_external_identities",
+  "List all external genealogy provider identities linked to a person (e.g. FamilySearch, FindAGrave, WikiTree).",
+  {
+    personId: z.string().describe("Person ID"),
+  },
+  async ({ personId }) =>
+    ok(await client.listExternalIdentities(personId)),
+);
+
+server.tool(
+  "create_external_identity",
+  "Link a person to an identity on an external genealogy provider. Each person may have at most one identity per provider. " +
+    "Providers: familysearch, findagrave, wikitree, myheritage, ancestry.",
+  {
+    personId: z.string().describe("Person ID"),
+    provider: z
+      .string()
+      .describe("Provider name: familysearch, findagrave, wikitree, myheritage, ancestry"),
+    externalId: z.string().describe("Provider-specific person/profile ID"),
+    externalUrl: z
+      .string()
+      .optional()
+      .describe("Direct URL to the profile on the provider"),
+  },
+  async ({ personId, provider, externalId, externalUrl }) =>
+    ok(
+      await client.createExternalIdentity(personId, {
+        provider,
+        externalId,
+        externalUrl,
+      }),
+    ),
+);
+
+server.tool(
+  "update_external_identity",
+  "Update the external ID or URL for an existing external identity link.",
+  {
+    personId: z.string().describe("Person ID"),
+    identityId: z.string().describe("External Identity ID"),
+    externalId: z.string().optional().describe("Updated provider-specific ID"),
+    externalUrl: z
+      .string()
+      .optional()
+      .describe("Updated URL to the profile on the provider"),
+  },
+  async ({ personId, identityId, externalId, externalUrl }) =>
+    ok(
+      await client.updateExternalIdentity(personId, identityId, {
+        externalId,
+        externalUrl,
+      }),
+    ),
+);
+
+server.tool(
+  "delete_external_identity",
+  "Unlink a person from an external genealogy provider. Does not affect the external provider.",
+  {
+    personId: z.string().describe("Person ID"),
+    identityId: z.string().describe("External Identity ID"),
+  },
+  async ({ personId, identityId }) =>
+    ok(await client.deleteExternalIdentity(personId, identityId)),
+);
+
+// ==========================================================================
+// Person Facts
+// ==========================================================================
+
+server.tool(
+  "list_person_facts",
+  "List structured life facts for a person (occupation, military service, residence, burial, cause of death, etc.). " +
+    "Optionally filter by fact type.",
+  {
+    personId: z.string().describe("Person ID"),
+    factType: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by fact type: OCCUPATION, MILITARY_SERVICE, RESIDENCE, IMMIGRATION, EMIGRATION, " +
+          "EDUCATION, BURIAL, CAUSE_OF_DEATH, BIRTH, DEATH, MARRIAGE, DIVORCE, RELIGION, ETHNICITY, NATURALIZATION, OTHER",
+      ),
+  },
+  async ({ personId, factType }) =>
+    ok(await client.listPersonFacts(personId, factType)),
+);
+
+server.tool(
+  "create_person_fact",
+  "Add a structured life fact to a person. Fact types: OCCUPATION, MILITARY_SERVICE, RESIDENCE, IMMIGRATION, " +
+    "EMIGRATION, EDUCATION, BURIAL, CAUSE_OF_DEATH, BIRTH, DEATH, MARRIAGE, DIVORCE, RELIGION, ETHNICITY, NATURALIZATION, OTHER.",
+  {
+    personId: z.string().describe("Person ID"),
+    factType: z
+      .string()
+      .describe(
+        "Fact type: OCCUPATION, MILITARY_SERVICE, RESIDENCE, IMMIGRATION, EMIGRATION, " +
+          "EDUCATION, BURIAL, CAUSE_OF_DEATH, BIRTH, DEATH, MARRIAGE, DIVORCE, RELIGION, ETHNICITY, NATURALIZATION, OTHER",
+      ),
+    value: z.string().describe("Primary value (e.g. job title, branch of service, address)"),
+    startDate: z.string().optional().describe("Start date (ISO 8601)"),
+    endDate: z.string().optional().describe("End date (ISO 8601)"),
+    location: z.string().optional().describe("Free-text location (e.g. 'Chicago, IL')"),
+    sourceProvider: z
+      .string()
+      .optional()
+      .describe("Source of the fact: familysearch, findagrave, manual, etc."),
+    externalFactId: z
+      .string()
+      .optional()
+      .describe("Provider-specific fact identifier for sync"),
+    notes: z.string().optional().describe("Additional notes"),
+  },
+  async ({ personId, ...data }) =>
+    ok(await client.createPersonFact(personId, data)),
+);
+
+server.tool(
+  "update_person_fact",
+  "Update a structured life fact for a person.",
+  {
+    personId: z.string().describe("Person ID"),
+    factId: z.string().describe("Person Fact ID"),
+    factType: z.string().optional().describe("Updated fact type"),
+    value: z.string().optional().describe("Updated primary value"),
+    startDate: z.string().optional().describe("Updated start date (ISO 8601)"),
+    endDate: z.string().optional().describe("Updated end date (ISO 8601)"),
+    location: z.string().optional().describe("Updated location"),
+    sourceProvider: z.string().optional().describe("Updated source provider"),
+    externalFactId: z.string().optional().describe("Updated external fact ID"),
+    notes: z.string().optional().describe("Updated notes"),
+  },
+  async ({ personId, factId, ...data }) =>
+    ok(await client.updatePersonFact(personId, factId, data)),
+);
+
+server.tool(
+  "delete_person_fact",
+  "Permanently delete a life fact from a person.",
+  {
+    personId: z.string().describe("Person ID"),
+    factId: z.string().describe("Person Fact ID"),
+  },
+  async ({ personId, factId }) =>
+    ok(await client.deletePersonFact(personId, factId)),
 );
 
 // ==========================================================================
@@ -1130,6 +1586,239 @@ server.tool(
     notes: z.string().optional().describe("Notes"),
   },
   async (args) => ok(await client.onboard(args)),
+);
+
+// ==========================================================================
+// Genealogy Sync
+// ==========================================================================
+
+server.tool(
+  "sync_preview",
+  "Generate a sync preview comparing a person's data with their linked external genealogy sources (e.g. WikiTree). Returns field comparisons, relationship matches, and provider errors.",
+  {
+    personId: z.string().describe("Person ID to sync"),
+  },
+  async ({ personId }) => ok(await client.getSyncPreview(personId)),
+);
+
+server.tool(
+  "sync_apply",
+  "Apply selected sync changes from a sync preview. Specify which fields to update, which facts to import, and which relationships to create.",
+  {
+    personId: z.string().describe("Person ID to apply changes to"),
+    fields: z.record(z.string(), z.string()).describe("Field name → source ('current' or provider ID)"),
+    factIndices: z.array(z.number()).optional().describe("Indices of facts from preview to import"),
+    portraitProvider: z.string().nullable().optional().describe("Provider to use for portrait (null = keep current)"),
+    relationships: z.array(z.object({
+      provider: z.string(),
+      index: z.number(),
+      localPersonId: z.string().nullable(),
+    })).optional().describe("Relationships to create from preview"),
+  },
+  async (args) => ok(await client.applySyncChanges(args.personId, {
+    personId: args.personId,
+    fields: args.fields,
+    factIndices: args.factIndices ?? [],
+    portraitProvider: args.portraitProvider ?? null,
+    relationships: args.relationships ?? [],
+  })),
+);
+
+server.tool(
+  "list_providers",
+  "List all registered genealogy providers with their capabilities.",
+  {},
+  async () => ok(await client.getProviderCapabilities()),
+);
+
+server.tool(
+  "wikitree_search",
+  "Search WikiTree for persons matching the given criteria. Returns potential matches with names, dates, locations, and parent info.",
+  {
+    firstName: z.string().optional().describe("First name to search"),
+    lastName: z.string().describe("Last name (required)"),
+    birthDate: z.string().optional().describe("Birth date (YYYY or YYYY-MM-DD)"),
+    deathDate: z.string().optional().describe("Death date (YYYY or YYYY-MM-DD)"),
+    limit: z.number().optional().describe("Max results (default 10)"),
+  },
+  async (args) => ok(await client.searchWikiTree(args)),
+);
+
+server.tool(
+  "wikitree_preview",
+  "Preview a WikiTree profile before linking it to a person. Accepts a WikiTree ID (e.g. 'Jorgensen-4571') or a WikiTree profile URL.",
+  {
+    wikiTreeId: z.string().describe("WikiTree ID or profile URL"),
+  },
+  async ({ wikiTreeId }) => ok(await client.previewWikiTreeLink(wikiTreeId)),
+);
+
+// ==========================================================================
+// WikiTree Matching Queue
+// ==========================================================================
+
+server.tool(
+  "queue_wikitree_matching",
+  "Build or refresh the WikiTree matching queue. Creates queue entries for all persons " +
+    "that don't already have a WikiTree ExternalIdentity. Returns a summary of queue counts.",
+  {},
+  async () => ok(await client.buildWikiTreeMatchQueue()),
+);
+
+server.tool(
+  "get_matching_queue",
+  "Get the WikiTree matching queue. Returns queue entries with scored candidates. " +
+    "Can filter by status and return only summary counts.",
+  {
+    status: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by status: strong_match, ambiguous, no_match, linked, pending, error"
+      ),
+    summary: z
+      .boolean()
+      .optional()
+      .describe("If true, return only summary counts instead of full entries"),
+  },
+  async ({ status, summary }) =>
+    ok(await client.getWikiTreeMatchQueue({ status, summary })),
+);
+
+server.tool(
+  "search_wikitree_candidates",
+  "Search WikiTree for candidates matching persons in the queue. " +
+    "If personId is provided, searches for a single person. " +
+    "If no personId, searches all pending entries (bulk search). " +
+    "Supports custom search queries to override automatic search parameters.",
+  {
+    personId: z.string().optional().describe("Person ID to search for (omit for bulk search)"),
+    firstName: z.string().optional().describe("Override first name for search"),
+    lastName: z.string().optional().describe("Override last name for search"),
+    birthDate: z.string().optional().describe("Override birth date for search (YYYY or YYYY-MM-DD)"),
+    deathDate: z.string().optional().describe("Override death date for search"),
+    wikiTreeId: z.string().optional().describe("Look up a specific WikiTree ID or URL"),
+  },
+  async (args) => ok(await client.searchWikiTreeCandidates(args)),
+);
+
+server.tool(
+  "link_wikitree_candidate",
+  "Link a WikiTree candidate to a person by creating an ExternalIdentity. " +
+    "The user must explicitly call this - no automatic linking occurs.",
+  {
+    personId: z.string().describe("Person ID to link"),
+    wikiTreeId: z.string().describe("WikiTree ID to link (e.g. 'Jorgensen-4571')"),
+  },
+  async ({ personId, wikiTreeId }) =>
+    ok(await client.linkWikiTreeCandidate(personId, wikiTreeId)),
+);
+
+server.tool(
+  "reject_wikitree_candidate",
+  "Reject a specific WikiTree candidate for a person. The candidate will be " +
+    "added to the ignored list and filtered from future results.",
+  {
+    personId: z.string().describe("Person ID"),
+    wikiTreeId: z.string().describe("WikiTree ID to reject"),
+  },
+  async ({ personId, wikiTreeId }) =>
+    ok(await client.rejectWikiTreeCandidate(personId, wikiTreeId)),
+);
+
+server.tool(
+  "reset_wikitree_no_matches",
+  "Reset all no_match entries back to pending for re-searching. " +
+    "Use this after fixing search parameters or after the search implementation has been updated.",
+  {},
+  async () => ok(await client.resetWikiTreeNoMatches()),
+);
+
+server.tool(
+  "reset_wikitree_non_final",
+  "Extended reset: reset strong_match, ambiguous, no_match, and error entries back to pending. " +
+    "Preserves linked and rejected entries. Use before starting a fresh A/B comparison run.",
+  {},
+  async () => ok(await client.resetWikiTreeNonFinal()),
+);
+
+// ==========================================================================
+// WikiTree Matching Jobs
+// ==========================================================================
+
+server.tool(
+  "start_wikitree_match_job",
+  "Start a persistent background matching job. Searches all pending queue entries, " +
+    "scores candidates, and optionally enriches top candidates with WikiTree relationship data. " +
+    "Returns immediately with job status; processing runs in background.",
+  {
+    enrichment: z.boolean().optional().describe("Enable candidate enrichment via WikiTree relationship API (default: false)"),
+    enrichmentTopN: z.number().optional().describe("Number of top candidates to enrich (default: 5, max: 10). Use 3 or 5 for A/B testing."),
+    batchSize: z.number().optional().describe("Number of people to process per batch (default: 10, max: 50)"),
+    strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 7)"),
+    leadRequired: z.number().optional().describe("Required score lead over second-place candidate for strong_match (default: 3)"),
+  },
+  async (args) => ok(await client.startWikiTreeMatchJob(args)),
+);
+
+server.tool(
+  "pause_wikitree_match_job",
+  "Pause a running WikiTree matching job. The current batch will complete but no new batches start.",
+  {
+    jobId: z.string().describe("Job ID to pause"),
+  },
+  async ({ jobId }) => ok(await client.pauseWikiTreeMatchJob(jobId)),
+);
+
+server.tool(
+  "resume_wikitree_match_job",
+  "Resume a paused WikiTree matching job.",
+  {
+    jobId: z.string().describe("Job ID to resume"),
+  },
+  async ({ jobId }) => ok(await client.resumeWikiTreeMatchJob(jobId)),
+);
+
+server.tool(
+  "cancel_wikitree_match_job",
+  "Cancel a running or paused WikiTree matching job.",
+  {
+    jobId: z.string().describe("Job ID to cancel"),
+  },
+  async ({ jobId }) => ok(await client.cancelWikiTreeMatchJob(jobId)),
+);
+
+server.tool(
+  "get_wikitree_match_job_status",
+  "Get the status of a WikiTree matching job including progress, statistics, and configuration. " +
+    "If no jobId is provided, returns the most recent job. " +
+    "Statistics include: total people, processed, pending, strong matches, ambiguous, no match, " +
+    "errors, linked, rejected, total API calls, total runtime, avg candidates per search, " +
+    "avg API calls per person, avg processing time, enrichmentTopN setting.",
+  {
+    jobId: z.string().optional().describe("Job ID (omit for most recent job)"),
+  },
+  async ({ jobId }) => ok(await client.getWikiTreeMatchJobStatus(jobId)),
+);
+
+server.tool(
+  "list_wikitree_match_jobs",
+  "List all WikiTree matching jobs for the current user, most recent first.",
+  {},
+  async () => ok(await client.listWikiTreeMatchJobs()),
+);
+
+server.tool(
+  "compare_wikitree_match_jobs",
+  "Compare two completed WikiTree matching jobs (A/B test). Returns derived metrics: " +
+    "additional strong matches, reduction in ambiguous/no_match, additional API calls, " +
+    "additional runtime, and strong matches per additional API call.",
+  {
+    baselineJobId: z.string().describe("Job ID of the baseline run (e.g., no enrichment)"),
+    comparisonJobId: z.string().describe("Job ID of the comparison run (e.g., with enrichment)"),
+  },
+  async ({ baselineJobId, comparisonJobId }) =>
+    ok(await client.compareWikiTreeMatchJobs(baselineJobId, comparisonJobId)),
 );
 
 // ==========================================================================
