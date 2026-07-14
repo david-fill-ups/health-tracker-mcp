@@ -1,18 +1,16 @@
 const BASE_URL = process.env.HEALTH_TRACKER_URL ?? "http://localhost:3000";
-const API_KEY = process.env.HEALTH_TRACKER_API_KEY ?? "";
-
-let activeProfileId: string | null = null;
+import { getRequestContext } from "./request-context.js";
 
 export function getActiveProfileId(): string | null {
-  return activeProfileId;
+  return getRequestContext().auth.activeProfileId ?? null;
 }
 
 export function setActiveProfileId(id: string | null): void {
-  activeProfileId = id;
+  getRequestContext().auth.activeProfileId = id ?? undefined;
 }
 
 function requireProfileId(explicit?: string): string {
-  const id = explicit ?? activeProfileId;
+  const id = explicit ?? getActiveProfileId();
   if (!id) throw new Error("No active profile. Use switch_profile first or provide a profileId.");
   return id;
 }
@@ -21,7 +19,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const url = `${BASE_URL}${path}`;
   const hdrs: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${API_KEY}`,
+    Authorization: await getRequestContext().credentials.getAuthorization(getRequestContext().auth),
   };
   const res = await fetch(url, {
     method,
@@ -42,6 +40,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 function withProfile(path: string, extra?: Record<string, string>): string {
   const params = new URLSearchParams();
+  const activeProfileId = getActiveProfileId();
   if (activeProfileId) params.set("profileId", activeProfileId);
   if (extra) for (const [k, v] of Object.entries(extra)) params.set(k, v);
   const qs = params.toString();

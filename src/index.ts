@@ -2,11 +2,38 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as client from "./client.js";
+import { PolicyAuthorizer, SafeAuditLogger, assertRuntimeMode, createAuthenticator, createCredentialProvider } from "./auth.js";
+import { getRequestContext, runInvocationWithContext, type RequestContext } from "./request-context.js";
+import { requireToolPolicy } from "./policies.js";
 
-const server = new McpServer({
-  name: "health-tracker",
-  version: "1.0.0",
-});
+export function createHealthTrackerServer(options: { invocationContext?: RequestContext } = {}): McpServer {
+const rawServer = new McpServer({ name: "health-tracker", version: "1.0.0" });
+const authorizer = new PolicyAuthorizer();
+const audit = new SafeAuditLogger();
+const registered = new Set<string>();
+const server = new Proxy(rawServer, {
+  get(target, property, receiver) {
+    if (property !== "tool") return Reflect.get(target, property, receiver);
+    return (name: string, ...args: unknown[]) => {
+      const policy = requireToolPolicy(name);
+      registered.add(name);
+      const handlerIndex = args.length - 1;
+      const handler = args[handlerIndex] as (...handlerArgs: unknown[]) => unknown;
+      args[handlerIndex] = async (...handlerArgs: unknown[]) => runInvocationWithContext(options.invocationContext, async () => {
+        const { auth } = getRequestContext();
+        try {
+          authorizer.authorize(auth, policy);
+          await audit.record({ action: name, principal: auth.principal, decision: "allowed" });
+          return await handler(...handlerArgs);
+        } catch (error) {
+          await audit.record({ action: name, principal: auth.principal, decision: "denied", reason: error instanceof Error ? error.message : "denied" });
+          throw error;
+        }
+      });
+      return (target.tool as (...toolArgs: unknown[]) => unknown).call(target, name, ...args);
+    };
+  },
+}) as McpServer;
 
 // Helper: get profile ID, preferring explicit over active
 function pid(explicit?: string): string {
@@ -1620,7 +1647,7 @@ server.tool(
     fields: args.fields,
     factIndices: args.factIndices ?? [],
     portraitProvider: args.portraitProvider ?? null,
-    relationships: args.relationships ?? [],
+    relationships: (args.relationships ?? []) as Array<{ provider: string; index: number; localPersonId: string | null }>,
   })),
 );
 
@@ -1825,7 +1852,15 @@ server.tool(
 // Start server
 // ==========================================================================
 
+return rawServer;
+}
+
 async function main() {
+  if ((process.env.MCP_TRANSPORT || "stdio") !== "stdio") return;
+  assertRuntimeMode("stdio", "local_api_key");
+  const auth = await createAuthenticator("local_api_key").authenticate({});
+  const invocationContext = { auth, credentials: createCredentialProvider("local_api_key") };
+  const server = createHealthTrackerServer({ invocationContext });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("health-tracker MCP server running on stdio");
