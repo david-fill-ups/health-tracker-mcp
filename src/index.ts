@@ -1795,7 +1795,7 @@ server.tool(
   "Process one batch of a running WikiTree matching job synchronously. " +
     "Returns { continue, batchProcessed, status, jobId }. " +
     "Call repeatedly until continue=false to drive a job to completion. " +
-    "Each call processes entries within a 250s time budget.",
+    "Each call processes ~1 person within the serverless time budget.",
   {
     jobId: z.string().describe("Job ID to drain"),
   },
