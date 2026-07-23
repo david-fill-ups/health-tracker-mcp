@@ -1102,6 +1102,13 @@ export async function cancelWikiTreeMatchJob(jobId: string): Promise<unknown> {
   });
 }
 
+export async function drainWikiTreeMatchJob(jobId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/job", {
+    action: "drain",
+    jobId,
+  });
+}
+
 export async function getWikiTreeMatchJobStatus(jobId?: string): Promise<unknown> {
   const params: Record<string, string> = {};
   if (jobId) params.jobId = jobId;

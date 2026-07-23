@@ -1791,6 +1791,18 @@ server.tool(
 );
 
 server.tool(
+  "drain_wikitree_match_job",
+  "Process one batch of a running WikiTree matching job synchronously. " +
+    "Returns { continue, batchProcessed, status, jobId }. " +
+    "Call repeatedly until continue=false to drive a job to completion. " +
+    "Each call processes entries within a 250s time budget.",
+  {
+    jobId: z.string().describe("Job ID to drain"),
+  },
+  async ({ jobId }) => ok(await client.drainWikiTreeMatchJob(jobId)),
+);
+
+server.tool(
   "pause_wikitree_match_job",
   "Pause a running WikiTree matching job. The current batch will complete but no new batches start.",
   {
