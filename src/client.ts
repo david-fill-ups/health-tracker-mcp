@@ -1074,6 +1074,7 @@ export async function startWikiTreeMatchJob(opts?: {
   batchSize?: number;
   strongThreshold?: number;
   leadRequired?: number;
+  graphExpansion?: boolean;
 }): Promise<unknown> {
   return request("POST", "/api/genealogy/wikitree/queue/job", {
     action: "start",

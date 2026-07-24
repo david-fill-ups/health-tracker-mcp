@@ -1786,6 +1786,7 @@ server.tool(
     batchSize: z.number().optional().describe("Number of people to process per batch (default: 10, max: 50)"),
     strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 7)"),
     leadRequired: z.number().optional().describe("Required score lead over second-place candidate for strong_match (default: 3)"),
+    graphExpansion: z.boolean().optional().describe("Run graph expansion from confirmed links after search phase completes (default: false)"),
   },
   async (args) => ok(await client.startWikiTreeMatchJob(args)),
 );
