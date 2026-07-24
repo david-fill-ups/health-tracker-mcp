@@ -715,6 +715,69 @@ server.tool(
   async () => ok(await client.listDistinctMetricTypes()),
 );
 
+const visionCollections = {
+  refractions: z.array(z.record(z.string(), z.unknown())).optional().describe("Typed refractions with OD/OS eye values"),
+  acuities: z.array(z.record(z.string(), z.unknown())).optional().describe("Visual acuity observations"),
+  iopReadings: z.array(z.record(z.string(), z.unknown())).optional().describe("IOP observations including unsuccessful statuses"),
+  pdReadings: z.array(z.record(z.string(), z.unknown())).optional().describe("Binocular or monocular PD observations"),
+  cupDiscReadings: z.array(z.record(z.string(), z.unknown())).optional().describe("Cup-to-disc observations"),
+  keratometry: z.array(z.record(z.string(), z.unknown())).optional().describe("Keratometry observations"),
+};
+
+server.tool(
+  "list_vision_exams",
+  "List cohesive vision exams for the active profile.",
+  {},
+  async () => ok(await client.listVisionExams()),
+);
+
+server.tool(
+  "get_vision_exam",
+  "Get one vision exam with all related observations.",
+  { id: z.string().describe("Vision exam ID") },
+  async ({ id }) => ok(await client.getVisionExam(id)),
+);
+
+server.tool(
+  "create_vision_exam",
+  "Create a partial or complete vision exam. Derived values are calculated by Health Tracker.",
+  {
+    examAt: z.string().describe("Exam date/time in ISO 8601"),
+    provider: z.string().optional(),
+    facility: z.string().optional(),
+    visitId: z.string().optional(),
+    sourceDocument: z.string().optional(),
+    sourceText: z.string().optional(),
+    entryMethod: z.enum(["MANUAL", "IMPORTED", "EXTRACTED"]).optional(),
+    notes: z.string().optional(),
+    ...visionCollections,
+  },
+  async (args) => ok(await client.createVisionExam(clean(args))),
+);
+
+server.tool(
+  "update_vision_exam",
+  "Partially update a vision exam using its current version.",
+  {
+    id: z.string().describe("Vision exam ID"),
+    version: z.number().int().positive().describe("Current optimistic concurrency version"),
+    examAt: z.string().optional(),
+    provider: z.string().optional(),
+    facility: z.string().optional(),
+    visitId: z.string().optional(),
+    notes: z.string().optional(),
+    ...visionCollections,
+  },
+  async ({ id, ...data }) => ok(await client.updateVisionExam(id, clean(data))),
+);
+
+server.tool(
+  "delete_vision_exam",
+  "Delete a vision exam and its observations.",
+  { id: z.string().describe("Vision exam ID") },
+  async ({ id }) => ok(await client.deleteVisionExam(id)),
+);
+
 // ==========================================================================
 // Doctors
 // ==========================================================================

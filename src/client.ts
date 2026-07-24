@@ -511,6 +511,30 @@ export async function listDistinctMetricTypes(): Promise<unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Vision Exams
+// ---------------------------------------------------------------------------
+
+export async function listVisionExams(): Promise<unknown> {
+  return request("GET", withProfile("/api/vision-exams"));
+}
+
+export async function getVisionExam(id: string): Promise<unknown> {
+  return request("GET", withProfile(`/api/vision-exams/${id}`));
+}
+
+export async function createVisionExam(data: Record<string, unknown>): Promise<unknown> {
+  return request("POST", "/api/vision-exams", { profileId: requireProfileId(), ...data });
+}
+
+export async function updateVisionExam(id: string, data: Record<string, unknown>): Promise<unknown> {
+  return request("PUT", withProfile(`/api/vision-exams/${id}`), data);
+}
+
+export async function deleteVisionExam(id: string): Promise<unknown> {
+  return request("DELETE", withProfile(`/api/vision-exams/${id}`));
+}
+
+// ---------------------------------------------------------------------------
 // Doctors
 // ---------------------------------------------------------------------------
 

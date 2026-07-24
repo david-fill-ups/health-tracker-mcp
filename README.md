@@ -87,6 +87,44 @@ npm test
 npm run build
 ```
 
+## Vision exam tools
+
+Vision data is exposed as a cohesive exam aggregate rather than unrelated generic metrics:
+
+| Tool | Impact | Purpose |
+|---|---|---|
+| `list_vision_exams` | read | List complete exams for the active profile |
+| `get_vision_exam` | read | Retrieve one exam with refractions and observations |
+| `create_vision_exam` | write | Create a partial or complete exam |
+| `update_vision_exam` | write | Partially update an exam using its current `version` |
+| `delete_vision_exam` | destructive | Delete an exam and its child observations |
+
+The create/update tools accept collections for typed refractions, visual acuity, IOP, PD,
+cup-to-disc ratio, and keratometry. OD, OS, and OU laterality and raw source notation should
+be preserved. Derived spherical-equivalent and logMAR values are calculated by the Health
+Tracker API and must not be supplied as authoritative user input.
+
+`delete_vision_exam` is disabled in hosted mode by the standard destructive-operation policy.
+All tools use the active profile and remain subject to the API’s profile authorization checks.
+For write operations request `health:write`; reads require `health:read`.
+
+Example:
+
+```json
+{
+  "examAt": "2026-07-17T09:22:00-04:00",
+  "provider": "Bethel Yoseph, O.D.",
+  "refractions": [{
+    "type": "FINAL_PRESCRIPTION",
+    "usage": "Distance single vision",
+    "eyes": [
+      { "eye": "OD", "sphere": -1.0, "cylinder": -1.25, "axis": 95, "notation": "MINUS" },
+      { "eye": "OS", "sphere": -1.0, "cylinder": -1.25, "axis": 70, "notation": "MINUS" }
+    ]
+  }]
+}
+```
+
 For a hosted local smoke test, set hosted variables against a test Auth0 tenant, run `vercel dev`, and connect MCP Inspector to `http://localhost:3000/mcp` with `Authorization: Bearer <test-access-token>`. Verify initialization, `tools/list`, a read tool, a missing-scope denial, and a disabled destructive-tool denial.
 
 After deployment, repeat against `https://<project>.vercel.app/mcp`, check `/.well-known/oauth-protected-resource`, then confirm the Health Tracker audit trail records the mapped internal user. Never paste production tokens into shell history or logs.
