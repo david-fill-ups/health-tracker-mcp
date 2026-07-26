@@ -1840,12 +1840,12 @@ server.tool(
   "start_wikitree_match_job",
   "Start a persistent background matching job. Searches all pending queue entries, " +
     "scores candidates, and optionally enriches top candidates with WikiTree relationship data. " +
-    "Returns immediately with job status; processing runs in background.",
+    "Returns immediately with job status; call drain_wikitree_match_job to process it.",
   {
     enrichment: z.boolean().optional().describe("Enable candidate enrichment via WikiTree relationship API (default: true)"),
     enrichmentTopN: z.number().optional().describe("Number of top candidates to enrich (default: 3, max: 10)."),
     batchSize: z.number().optional().describe("Number of people to process per batch (default: 10, max: 50)"),
-    strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 7)"),
+    strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 8)"),
     leadRequired: z.number().optional().describe("Required score lead over second-place candidate for strong_match (default: 3)"),
     graphExpansion: z.boolean().optional().describe("Run graph expansion from confirmed links after search phase completes (default: false)"),
   },
@@ -1857,7 +1857,7 @@ server.tool(
   "Process one batch of a running WikiTree matching job synchronously. " +
     "Returns { continue, batchProcessed, status, jobId }. " +
     "Call repeatedly until continue=false to drive a job to completion. " +
-    "Each call processes ~1 person within the serverless time budget.",
+    "A timed-out call may still finish server-side; poll status before retrying.",
   {
     jobId: z.string().describe("Job ID to drain"),
   },
@@ -1895,7 +1895,7 @@ server.tool(
   "get_wikitree_match_job_status",
   "Get the status of a WikiTree matching job including progress, statistics, and configuration. " +
     "If no jobId is provided, returns the most recent job. " +
-    "Statistics include: total people, processed, pending, strong matches, ambiguous, no match, " +
+    "Statistics include: total people, processed, pending, strong matches, ambiguous, vetoed review, no match, " +
     "errors, linked, rejected, total API calls, total runtime, avg candidates per search, " +
     "avg API calls per person, avg processing time, enrichmentTopN setting.",
   {
