@@ -725,57 +725,55 @@ const visionCollections = {
 };
 
 server.tool(
-  "list_vision_exams",
-  "List cohesive vision exams for the active profile.",
+  "list_vision_metrics",
+  "List the structured history for the compound Vision Health Metric.",
   {},
-  async () => ok(await client.listVisionExams()),
+  async () => ok(await client.listVisionMetrics()),
 );
 
 server.tool(
-  "get_vision_exam",
-  "Get one vision exam with all related observations.",
-  { id: z.string().describe("Vision exam ID") },
-  async ({ id }) => ok(await client.getVisionExam(id)),
+  "get_vision_metric",
+  "Get one structured entry from the compound Vision Health Metric.",
+  { id: z.string().describe("Vision metric entry ID") },
+  async ({ id }) => ok(await client.getVisionMetric(id)),
 );
 
 server.tool(
-  "create_vision_exam",
-  "Create a partial or complete vision exam. Derived values are calculated by Health Tracker.",
+  "create_vision_metric",
+  "Add a structured entry to the compound Vision Health Metric. Derived display values are calculated by Health Tracker.",
   {
     examAt: z.string().describe("Exam date/time in ISO 8601"),
     provider: z.string().optional(),
     facility: z.string().optional(),
-    visitId: z.string().optional(),
     sourceDocument: z.string().optional(),
     sourceText: z.string().optional(),
     entryMethod: z.enum(["MANUAL", "IMPORTED", "EXTRACTED"]).optional(),
     notes: z.string().optional(),
     ...visionCollections,
   },
-  async (args) => ok(await client.createVisionExam(clean(args))),
+  async (args) => ok(await client.createVisionMetric(clean(args))),
 );
 
 server.tool(
-  "update_vision_exam",
-  "Partially update a vision exam using its current version.",
+  "update_vision_metric",
+  "Partially update a Vision metric entry using its current version.",
   {
-    id: z.string().describe("Vision exam ID"),
+    id: z.string().describe("Vision metric entry ID"),
     version: z.number().int().positive().describe("Current optimistic concurrency version"),
     examAt: z.string().optional(),
     provider: z.string().optional(),
     facility: z.string().optional(),
-    visitId: z.string().optional(),
     notes: z.string().optional(),
     ...visionCollections,
   },
-  async ({ id, ...data }) => ok(await client.updateVisionExam(id, clean(data))),
+  async ({ id, ...data }) => ok(await client.updateVisionMetric(id, clean(data))),
 );
 
 server.tool(
-  "delete_vision_exam",
-  "Delete a vision exam and its observations.",
-  { id: z.string().describe("Vision exam ID") },
-  async ({ id }) => ok(await client.deleteVisionExam(id)),
+  "delete_vision_metric",
+  "Delete one structured entry and its child observations from the compound Vision Health Metric.",
+  { id: z.string().describe("Vision metric entry ID") },
+  async ({ id }) => ok(await client.deleteVisionMetric(id)),
 );
 
 // ==========================================================================

@@ -93,18 +93,18 @@ Vision data is exposed as a cohesive exam aggregate rather than unrelated generi
 
 | Tool | Impact | Purpose |
 |---|---|---|
-| `list_vision_exams` | read | List complete exams for the active profile |
-| `get_vision_exam` | read | Retrieve one exam with refractions and observations |
-| `create_vision_exam` | write | Create a partial or complete exam |
-| `update_vision_exam` | write | Partially update an exam using its current `version` |
-| `delete_vision_exam` | destructive | Delete an exam and its child observations |
+| `list_vision_metrics` | read | List entries in the compound Vision Health Metric |
+| `get_vision_metric` | read | Retrieve one structured Vision entry |
+| `create_vision_metric` | write | Add a partial or complete Vision entry |
+| `update_vision_metric` | write | Partially update a Vision entry using its current `version` |
+| `delete_vision_metric` | destructive | Delete a Vision entry and its child observations |
 
 The create/update tools accept collections for typed refractions, visual acuity, IOP, PD,
 cup-to-disc ratio, and keratometry. OD, OS, and OU laterality and raw source notation should
 be preserved. Derived spherical-equivalent and logMAR values are calculated by the Health
 Tracker API and must not be supplied as authoritative user input.
 
-`delete_vision_exam` is disabled in hosted mode by the standard destructive-operation policy.
+`delete_vision_metric` is disabled in hosted mode by the standard destructive-operation policy.
 All tools use the active profile and remain subject to the API’s profile authorization checks.
 For write operations request `health:write`; reads require `health:read`.
 
