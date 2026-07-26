@@ -1896,8 +1896,9 @@ server.tool(
   "Get the status of a WikiTree matching job including progress, statistics, and configuration. " +
     "If no jobId is provided, returns the most recent job. " +
     "Statistics include: total people, processed, pending, strong matches, ambiguous, vetoed review, no match, " +
-    "errors, linked, rejected, total API calls, total runtime, avg candidates per search, " +
-    "avg API calls per person, avg processing time, enrichmentTopN setting.",
+    "errors, linked, rejected, outbound HTTP transport attempts (including retries), logical searches, " +
+    "retry/empty-body/HTTP/parse/throttle metrics, total runtime, avg candidates per search, " +
+    "avg transport attempts per person, avg processing time, enrichmentTopN setting.",
   {
     jobId: z.string().optional().describe("Job ID (omit for most recent job)"),
   },
