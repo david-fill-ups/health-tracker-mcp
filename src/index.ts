@@ -1848,6 +1848,7 @@ server.tool(
     strongThreshold: z.number().optional().describe("Minimum score for strong_match classification (default: 8)"),
     leadRequired: z.number().optional().describe("Required score lead over second-place candidate for strong_match (default: 3)"),
     graphExpansion: z.boolean().optional().describe("Run graph expansion from confirmed links after search phase completes (default: false)"),
+    personIds: z.array(z.string()).optional().describe("Optional exact person-ID scope for a canary job"),
   },
   async (args) => ok(await client.startWikiTreeMatchJob(args)),
 );
@@ -1861,6 +1862,18 @@ server.tool(
     jobId: z.string().describe("Job ID to drain"),
   },
   async ({ jobId }) => ok(await client.drainWikiTreeMatchJob(jobId)),
+);
+
+server.tool(
+  "expand_wikitree_graph",
+  "Run a strictly targeted WikiTree graph operation through the local transport. " +
+    "Production retains graph reconciliation, scoring, assignment, and persistence.",
+  {
+    seedExternalId: z.string().describe("Confirmed WikiTree ID used as the sole graph seed"),
+    targetPersonIds: z.array(z.string()).min(1).describe("Exact local person IDs permitted to receive candidates"),
+  },
+  async ({ seedExternalId, targetPersonIds }) =>
+    ok(await client.expandWikiTreeGraphLocally(seedExternalId, targetPersonIds)),
 );
 
 server.tool(
