@@ -1199,6 +1199,7 @@ export function fixedWikiTreeUrl(operation: BridgeOperation): URL {
 export async function executeBridgeOperation(
   operation: BridgeOperation,
   suppliedTransport?: WikiTreeBrowserTransport,
+  continueClaim = true,
 ): Promise<unknown> {
   const transport = suppliedTransport ?? new PlaywrightChromeTransport();
   const ownsTransport = !suppliedTransport;
@@ -1248,6 +1249,7 @@ export async function executeBridgeOperation(
           operationToken: operation.operationToken,
           version: operation.version,
           parameterDigest: operation.parameterDigest,
+          continueClaim,
           response: body,
           metadata: {
             status: response.status,
@@ -1321,8 +1323,13 @@ export async function expandWikiTreeGraphLocally(
   return runWikiTreeAdhocBridge({ kind: "graph", seedExternalId, targetPersonIds });
 }
 
-export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25): Promise<unknown> {
-  const transport = new PlaywrightChromeTransport();
+export async function runWikiTreeLocalBridge(
+  jobId: string,
+  maxOperations = 25,
+  suppliedTransport?: WikiTreeBrowserTransport,
+): Promise<unknown> {
+  const transport = suppliedTransport ?? new PlaywrightChromeTransport();
+  const ownsTransport = !suppliedTransport;
   try {
   let processedOperations = 0;
   let last: unknown = null;
@@ -1338,7 +1345,11 @@ export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25):
     }
     let operation: BridgeOperation | undefined = claimed.operation;
     while (operation && processedOperations < maxOperations) {
-      const submitted = await executeBridgeOperation(operation, transport) as {
+      const submitted = await executeBridgeOperation(
+        operation,
+        transport,
+        processedOperations + 1 < maxOperations,
+      ) as {
         done?: boolean;
         operation?: BridgeOperation;
       };
@@ -1349,7 +1360,7 @@ export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25):
   }
   return { continue: true, processedOperations, last };
   } finally {
-    await transport.close();
+    if (ownsTransport) await transport.close();
   }
 }
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   executeBridgeOperation,
   fixedWikiTreeUrl,
+  runWikiTreeLocalBridge,
   type BridgeOperation,
 } from "./client.js";
 import { runWithRequestContext } from "./request-context.js";
@@ -78,7 +79,10 @@ describe("local MCP WikiTree bridge", () => {
       close: vi.fn().mockResolvedValue(undefined),
     };
 
-    const pending = runWithRequestContext(context, () => executeBridgeOperation(operation, browser));
+    const pending = runWithRequestContext(
+      context,
+      () => executeBridgeOperation(operation, browser, false),
+    );
     await vi.runAllTimersAsync();
     await expect(pending).resolves.toMatchObject({ done: true });
 
@@ -86,6 +90,65 @@ describe("local MCP WikiTree bridge", () => {
     expect(wikiAttempts).toBe(2);
     expect(calls.findIndex((url) => url.includes("/bridge/reserve")))
       .toBeLessThan(calls.findIndex((url) => url.startsWith("https://api.wikitree.com")));
+    expect(browser.close).not.toHaveBeenCalled();
+    const submitCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/bridge/submit"));
+    expect(JSON.parse(String((submitCall as unknown as [unknown, RequestInit])?.[1]?.body))).toMatchObject({
+      continueClaim: false,
+    });
+  });
+
+  it("continues immediately across two one-operation drains at a released boundary", async () => {
+    let claim = 0;
+    const submittedContinueClaims: boolean[] = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/bridge/claim")) {
+        claim++;
+        return new Response(JSON.stringify({ operation: {
+          ...operation,
+          operationId: `operation-${claim}`,
+          version: claim,
+        } }), { status: 200 });
+      }
+      if (url.includes("/bridge/reserve")) {
+        return new Response(JSON.stringify({ waitMs: 0 }), { status: 200 });
+      }
+      if (url.includes("/bridge/submit")) {
+        const body = JSON.parse(String(init?.body));
+        submittedContinueClaims.push(body.continueClaim);
+        return new Response(JSON.stringify(
+          claim === 1
+            ? { done: false, continue: true }
+            : { done: true, result: { status: "no_match" } },
+        ), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const browser: WikiTreeBrowserTransport = {
+      navigate: vi.fn().mockResolvedValue({
+        status: 200,
+        contentType: "application/json; charset=UTF-8",
+        body: '[{"status":0,"matches":[]}]',
+        retryAfter: null,
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const first = await runWithRequestContext(
+      context,
+      () => runWikiTreeLocalBridge("job-1", 1, browser),
+    );
+    const second = await runWithRequestContext(
+      context,
+      () => runWikiTreeLocalBridge("job-1", 1, browser),
+    );
+
+    expect(first).toMatchObject({ continue: true, processedOperations: 1 });
+    expect(second).toMatchObject({ continue: true, processedOperations: 1 });
+    expect(claim).toBe(2);
+    expect(submittedContinueClaims).toEqual([false, false]);
     expect(browser.close).not.toHaveBeenCalled();
   });
 });
