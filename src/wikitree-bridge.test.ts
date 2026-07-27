@@ -5,6 +5,7 @@ import {
   type BridgeOperation,
 } from "./client.js";
 import { runWithRequestContext } from "./request-context.js";
+import type { WikiTreeBrowserTransport } from "./wikitree-browser-transport.js";
 
 const operation: BridgeOperation = {
   operationToken: "t".repeat(43),
@@ -55,22 +56,29 @@ describe("local MCP WikiTree bridge", () => {
       if (url.includes("/bridge/reserve")) {
         return new Response(JSON.stringify({ waitMs: 0 }), { status: 200 });
       }
-      if (url === "https://api.wikitree.com/api.php?action=searchPerson&format=json&appId=DavidHealthTracker&FirstName=Frank&LastName=Phillips&BirthDate=1873-01-02&DeathDate=1948-03-04") {
-        wikiAttempts++;
-        if (wikiAttempts === 1) return new Response("", { status: 200 });
-        return new Response('[{"status":0,"matches":[]}]', {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
       if (url.includes("/bridge/submit")) {
         return new Response(JSON.stringify({ done: true, result: [] }), { status: 200 });
       }
       throw new Error(`Unexpected URL ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
+    const browser: WikiTreeBrowserTransport = {
+      navigate: vi.fn(async (url) => {
+        calls.push(url.href);
+        wikiAttempts++;
+        return wikiAttempts === 1
+          ? { status: 200, contentType: "application/json", body: "", retryAfter: null }
+          : {
+              status: 200,
+              contentType: "application/json",
+              body: '[{"status":0,"matches":[]}]',
+              retryAfter: null,
+            };
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
 
-    const pending = runWithRequestContext(context, () => executeBridgeOperation(operation));
+    const pending = runWithRequestContext(context, () => executeBridgeOperation(operation, browser));
     await vi.runAllTimersAsync();
     await expect(pending).resolves.toMatchObject({ done: true });
 
@@ -78,5 +86,6 @@ describe("local MCP WikiTree bridge", () => {
     expect(wikiAttempts).toBe(2);
     expect(calls.findIndex((url) => url.includes("/bridge/reserve")))
       .toBeLessThan(calls.findIndex((url) => url.startsWith("https://api.wikitree.com")));
+    expect(browser.close).not.toHaveBeenCalled();
   });
 });

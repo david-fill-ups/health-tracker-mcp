@@ -1,3 +1,8 @@
+import {
+  PlaywrightChromeTransport,
+  type WikiTreeBrowserTransport,
+} from "./wikitree-browser-transport.js";
+
 const BASE_URL = process.env.HEALTH_TRACKER_URL ?? "http://localhost:3000";
 import { getRequestContext } from "./request-context.js";
 
@@ -54,8 +59,20 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     let detail = "";
     try {
-      const err = (await res.json()) as { error?: string };
-      detail = err.error ? `: ${err.error}` : "";
+      const err = (await res.json()) as {
+        error?: string;
+        code?: string;
+        correlationId?: string;
+        issues?: Array<{ code: string; path: string; message: string }>;
+      };
+      const safe = {
+        code: err.code,
+        correlationId: err.correlationId,
+        issues: err.issues,
+      };
+      detail = err.error
+        ? `: ${err.error}${err.code ? ` ${JSON.stringify(safe)}` : ""}`
+        : "";
     } catch {}
     throw new Error(`health-tracker ${method} ${path} → ${res.status}${detail}`);
   }
@@ -1140,8 +1157,11 @@ export async function cancelWikiTreeMatchJob(jobId: string): Promise<unknown> {
   });
 }
 
-export async function drainWikiTreeMatchJob(jobId: string): Promise<unknown> {
-  return runWikiTreeLocalBridge(jobId);
+export async function drainWikiTreeMatchJob(
+  jobId: string,
+  maxOperations = 25,
+): Promise<unknown> {
+  return runWikiTreeLocalBridge(jobId, maxOperations);
 }
 
 export type BridgeOperation = {
@@ -1176,7 +1196,13 @@ export function fixedWikiTreeUrl(operation: BridgeOperation): URL {
   return url;
 }
 
-export async function executeBridgeOperation(operation: BridgeOperation): Promise<unknown> {
+export async function executeBridgeOperation(
+  operation: BridgeOperation,
+  suppliedTransport?: WikiTreeBrowserTransport,
+): Promise<unknown> {
+  const transport = suppliedTransport ?? new PlaywrightChromeTransport();
+  const ownsTransport = !suppliedTransport;
+  try {
   const maxAttempts = Math.min(3, Math.max(1, operation.retryPolicy.maxAttempts));
   let failure = {
     kind: "retry_exhausted" as "empty_body" | "http" | "parse" | "network" | "retry_exhausted",
@@ -1195,19 +1221,12 @@ export async function executeBridgeOperation(operation: BridgeOperation): Promis
     }) as { waitMs: number };
     await sleep(reservation.waitMs);
     try {
-      const response = await fetch(fixedWikiTreeUrl(operation), {
-        method: "GET",
-        redirect: "follow",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "DavidHealthTracker/1.0 (local MCP)",
-        },
-      });
-      const text = await response.text();
-      if (response.ok) failure.successfulTransportResponses++;
+      const response = await transport.navigate(fixedWikiTreeUrl(operation));
+      const text = response.body;
+      if (response.status >= 200 && response.status < 300) failure.successfulTransportResponses++;
       if (!text.trim()) {
         failure = { ...failure, kind: "empty_body", message: "Empty response body", emptyBodies: failure.emptyBodies + 1 };
-      } else if (!response.ok) {
+      } else if (response.status < 200 || response.status >= 300) {
         failure = {
           ...failure,
           kind: "http",
@@ -1224,7 +1243,7 @@ export async function executeBridgeOperation(operation: BridgeOperation): Promis
           if (attempt < maxAttempts) continue;
           break;
         }
-        return request("POST", "/api/genealogy/wikitree/bridge/submit", {
+        const submitted = await request("POST", "/api/genealogy/wikitree/bridge/submit", {
           type: "success",
           operationToken: operation.operationToken,
           version: operation.version,
@@ -1232,16 +1251,20 @@ export async function executeBridgeOperation(operation: BridgeOperation): Promis
           response: body,
           metadata: {
             status: response.status,
-            contentType: response.headers.get("content-type"),
+            contentType: response.contentType,
             successfulTransportResponses: failure.successfulTransportResponses,
             emptyBodies: failure.emptyBodies,
             httpErrors: failure.httpErrors,
             parseErrors: failure.parseErrors,
             throttledResponses: failure.throttledResponses,
           },
-        });
+        }) as Record<string, unknown>;
+        return {
+          ...submitted,
+          transport: { kind: "playwright_chrome", headless: true },
+        };
       }
-      const retryAfter = Number(response.headers.get("retry-after"));
+      const retryAfter = Number(response.retryAfter);
       if (attempt < maxAttempts) {
         await sleep(Number.isFinite(retryAfter) && retryAfter > 0
           ? retryAfter * 1000
@@ -1256,13 +1279,20 @@ export async function executeBridgeOperation(operation: BridgeOperation): Promis
       if (attempt < maxAttempts) await sleep(500 * (2 ** (attempt - 1)));
     }
   }
-  return request("POST", "/api/genealogy/wikitree/bridge/submit", {
+  const submitted = await request("POST", "/api/genealogy/wikitree/bridge/submit", {
     type: "failure",
     operationToken: operation.operationToken,
     version: operation.version,
     parameterDigest: operation.parameterDigest,
     failure,
-  });
+  }) as Record<string, unknown>;
+  return {
+    ...submitted,
+    transport: { kind: "playwright_chrome", headless: true },
+  };
+  } finally {
+    if (ownsTransport) await transport.close();
+  }
 }
 
 async function runWikiTreeAdhocBridge(input: Record<string, unknown>): Promise<unknown> {
@@ -1270,12 +1300,18 @@ async function runWikiTreeAdhocBridge(input: Record<string, unknown>): Promise<u
     operation?: BridgeOperation;
   };
   if (!prepared.operation) throw new Error("Production did not prepare a WikiTree operation");
-  const submitted = await executeBridgeOperation(prepared.operation) as {
+  const transport = new PlaywrightChromeTransport();
+  try {
+  const submitted = await executeBridgeOperation(prepared.operation, transport) as {
     done?: boolean;
     result?: unknown;
+    transport?: unknown;
   };
   if (!submitted.done) throw new Error("Ad-hoc WikiTree operation did not complete");
-  return submitted.result;
+  return { result: submitted.result, transport: submitted.transport };
+  } finally {
+    await transport.close();
+  }
 }
 
 export async function expandWikiTreeGraphLocally(
@@ -1286,6 +1322,8 @@ export async function expandWikiTreeGraphLocally(
 }
 
 export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25): Promise<unknown> {
+  const transport = new PlaywrightChromeTransport();
+  try {
   let processedOperations = 0;
   let last: unknown = null;
   while (processedOperations < maxOperations) {
@@ -1300,7 +1338,7 @@ export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25):
     }
     let operation: BridgeOperation | undefined = claimed.operation;
     while (operation && processedOperations < maxOperations) {
-      const submitted = await executeBridgeOperation(operation) as {
+      const submitted = await executeBridgeOperation(operation, transport) as {
         done?: boolean;
         operation?: BridgeOperation;
       };
@@ -1310,6 +1348,9 @@ export async function runWikiTreeLocalBridge(jobId: string, maxOperations = 25):
     }
   }
   return { continue: true, processedOperations, last };
+  } finally {
+    await transport.close();
+  }
 }
 
 export async function getWikiTreeMatchJobStatus(jobId?: string): Promise<unknown> {

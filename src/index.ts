@@ -1860,8 +1860,12 @@ server.tool(
     "local_worker_required before claiming queue rows.",
   {
     jobId: z.string().describe("Job ID to drain"),
+    maxOperations: z.literal(1).optional().describe(
+      "Set to 1 for a single-operation diagnostic invocation; omit for the normal bounded batch.",
+    ),
   },
-  async ({ jobId }) => ok(await client.drainWikiTreeMatchJob(jobId)),
+  async ({ jobId, maxOperations }) =>
+    ok(await client.drainWikiTreeMatchJob(jobId, maxOperations)),
 );
 
 server.tool(
