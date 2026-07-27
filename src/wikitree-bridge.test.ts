@@ -3,6 +3,7 @@ import {
   executeBridgeOperation,
   fixedWikiTreeUrl,
   runWikiTreeLocalBridge,
+  truncateUnicode,
   type BridgeOperation,
 } from "./client.js";
 import { runWithRequestContext } from "./request-context.js";
@@ -37,6 +38,10 @@ afterEach(() => {
 });
 
 describe("local MCP WikiTree bridge", () => {
+  it("truncates Unicode by code point without splitting surrogate pairs", () => {
+    expect(truncateUnicode("A😀B😀C", 4)).toBe("A😀B😀");
+  });
+
   it("uses only the fixed endpoint and preserves exact supplied parameters", () => {
     const url = fixedWikiTreeUrl(operation);
     expect(url.origin + url.pathname).toBe("https://api.wikitree.com/api.php");
@@ -150,5 +155,90 @@ describe("local MCP WikiTree bridge", () => {
     expect(claim).toBe(2);
     expect(submittedContinueClaims).toEqual([false, false]);
     expect(browser.close).not.toHaveBeenCalled();
+  });
+
+  it("submits bounded structured parse diagnostics without response content", async () => {
+    vi.useFakeTimers();
+    const submissions: Array<Record<string, any>> = [];
+    const rawBody = `<html>${JSON.stringify({ profile: "private genealogy content" })}${"x".repeat(2_000)}</html>`;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/bridge/reserve")) {
+        return new Response(JSON.stringify({ waitMs: 0 }), { status: 200 });
+      }
+      if (url.includes("/bridge/submit")) {
+        submissions.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ done: true, status: "error" }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }));
+    const browser: WikiTreeBrowserTransport = {
+      navigate: vi.fn().mockResolvedValue({
+        status: 200,
+        contentType: "text/html; charset=UTF-8",
+        body: rawBody,
+        retryAfter: null,
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const pending = runWithRequestContext(context, () => executeBridgeOperation(operation, browser));
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ done: true });
+
+    const failure = submissions[0].failure;
+    expect(failure).toMatchObject({
+      kind: "parse",
+      message: "Malformed JSON response",
+      status: 200,
+      contentType: "text/html; charset=UTF-8",
+      responseLength: Buffer.byteLength(rawBody),
+      responseBodyDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      attempt: 3,
+      retryCount: 2,
+      messageTruncated: false,
+      originalMessageLength: 23,
+      parseErrors: 3,
+    });
+    expect(Array.from(failure.message).length).toBeLessThanOrEqual(800);
+    expect(JSON.stringify(failure)).not.toContain("private genealogy content");
+    expect(JSON.stringify(failure)).not.toContain("<html>");
+  });
+
+  it("replaces oversized thrown diagnostics with a stable safe network summary", async () => {
+    vi.useFakeTimers();
+    let submission: Record<string, any> | undefined;
+    const unsafe = `${"😀".repeat(900)}<html>{"token":"secret"}</html>\n    at privateStack()`;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/bridge/reserve")) {
+        return new Response(JSON.stringify({ waitMs: 0 }), { status: 200 });
+      }
+      if (url.includes("/bridge/submit")) {
+        submission = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ done: true, status: "error" }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }));
+    const browser: WikiTreeBrowserTransport = {
+      navigate: vi.fn().mockRejectedValue(new Error(unsafe)),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const pending = runWithRequestContext(context, () => executeBridgeOperation(operation, browser));
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ done: true });
+
+    expect(submission?.failure).toMatchObject({
+      kind: "network",
+      message: "Browser transport request failed",
+      attempt: 3,
+      retryCount: 2,
+      messageTruncated: true,
+      originalMessageLength: Array.from(unsafe).length,
+    });
+    expect(JSON.stringify(submission)).not.toContain("<html>");
+    expect(JSON.stringify(submission)).not.toContain("privateStack");
+    expect(JSON.stringify(submission)).not.toContain('"token"');
   });
 });

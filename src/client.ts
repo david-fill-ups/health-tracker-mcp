@@ -2,6 +2,7 @@ import {
   PlaywrightChromeTransport,
   type WikiTreeBrowserTransport,
 } from "./wikitree-browser-transport.js";
+import { createHash } from "node:crypto";
 
 const BASE_URL = process.env.HEALTH_TRACKER_URL ?? "http://localhost:3000";
 import { getRequestContext } from "./request-context.js";
@@ -1183,6 +1184,86 @@ export type BridgeOperation = {
   claimExpiresAt: string;
 };
 
+const FAILURE_MESSAGE_LIMIT = 800;
+
+type BridgeFailureKind = "empty_body" | "http" | "parse" | "network" | "retry_exhausted";
+
+type BridgeFailure = {
+  kind: BridgeFailureKind;
+  message: string;
+  status?: number;
+  contentType?: string | null;
+  responseLength?: number;
+  responseBodyDigest?: string;
+  attempt?: number;
+  retryCount?: number;
+  messageTruncated?: boolean;
+  originalMessageLength?: number;
+  emptyBodies: number;
+  httpErrors: number;
+  parseErrors: number;
+  throttledResponses: number;
+  successfulTransportResponses: number;
+};
+
+function unicodeLength(value: string): number {
+  return Array.from(value).length;
+}
+
+export function truncateUnicode(value: string, maxLength: number): string {
+  return Array.from(value).slice(0, maxLength).join("");
+}
+
+function responseDigest(body: string): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+function safeFailureSummary(
+  kind: BridgeFailureKind,
+  error: unknown,
+): Pick<BridgeFailure, "message" | "messageTruncated" | "originalMessageLength"> {
+  const original = error instanceof Error ? error.message : String(error);
+  const originalMessageLength = unicodeLength(original);
+  const stable = kind === "network"
+    ? (/timeout/i.test(original) ? "Browser navigation timed out" : "Browser transport request failed")
+    : "WikiTree transport failed";
+  const message = truncateUnicode(stable, FAILURE_MESSAGE_LIMIT);
+  return {
+    message,
+    messageTruncated: original !== message,
+    originalMessageLength,
+  };
+}
+
+function responseFailure(
+  previous: BridgeFailure,
+  kind: BridgeFailureKind,
+  message: string,
+  response: { status: number; contentType: string | null; body: string },
+  attempt: number,
+): BridgeFailure {
+  return {
+    ...previous,
+    kind,
+    message: truncateUnicode(message, FAILURE_MESSAGE_LIMIT),
+    status: response.status,
+    contentType: response.contentType
+      ? truncateUnicode(response.contentType, 200)
+      : response.contentType,
+    responseLength: Buffer.byteLength(response.body),
+    responseBodyDigest: responseDigest(response.body),
+    attempt,
+    retryCount: Math.max(0, attempt - 1),
+    messageTruncated: false,
+    originalMessageLength: unicodeLength(message),
+    emptyBodies: previous.emptyBodies + (kind === "empty_body" ? 1 : 0),
+    httpErrors: previous.httpErrors + (kind === "http" ? 1 : 0),
+    parseErrors: previous.parseErrors + (kind === "parse" ? 1 : 0),
+    throttledResponses:
+      previous.throttledResponses + (kind === "http" && response.status === 429 ? 1 : 0),
+  };
+}
+
 async function sleep(ms: number): Promise<void> {
   if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1211,9 +1292,13 @@ export async function executeBridgeOperation(
   const ownsTransport = !suppliedTransport;
   try {
   const maxAttempts = Math.min(3, Math.max(1, operation.retryPolicy.maxAttempts));
-  let failure = {
-    kind: "retry_exhausted" as "empty_body" | "http" | "parse" | "network" | "retry_exhausted",
+  let failure: BridgeFailure = {
+    kind: "retry_exhausted",
     message: "Retry limit exhausted",
+    attempt: 0,
+    retryCount: 0,
+    messageTruncated: false,
+    originalMessageLength: 21,
     emptyBodies: 0,
     httpErrors: 0,
     parseErrors: 0,
@@ -1227,26 +1312,39 @@ export async function executeBridgeOperation(
       attempt,
     }) as { waitMs: number };
     await sleep(reservation.waitMs);
+    let response;
     try {
-      const response = await transport.navigate(fixedWikiTreeUrl(operation));
-      const text = response.body;
+      response = await transport.navigate(fixedWikiTreeUrl(operation));
+    } catch (error) {
+      const safe = safeFailureSummary("network", error);
+      failure = {
+        ...failure,
+        kind: "network",
+        ...safe,
+        attempt,
+        retryCount: Math.max(0, attempt - 1),
+      };
+      if (attempt < maxAttempts) await sleep(500 * (2 ** (attempt - 1)));
+      continue;
+    }
+    const text = response.body;
       if (response.status >= 200 && response.status < 300) failure.successfulTransportResponses++;
       if (!text.trim()) {
-        failure = { ...failure, kind: "empty_body", message: "Empty response body", emptyBodies: failure.emptyBodies + 1 };
+        failure = responseFailure(
+          failure, "empty_body", "Empty response body", response, attempt,
+        );
       } else if (response.status < 200 || response.status >= 300) {
-        failure = {
-          ...failure,
-          kind: "http",
-          message: `HTTP ${response.status}`,
-          httpErrors: failure.httpErrors + 1,
-          throttledResponses: failure.throttledResponses + (response.status === 429 ? 1 : 0),
-        };
+        failure = responseFailure(
+          failure, "http", `HTTP ${response.status}`, response, attempt,
+        );
       } else {
         let body: unknown;
         try {
           body = JSON.parse(text);
         } catch {
-          failure = { ...failure, kind: "parse", message: "Malformed JSON response", parseErrors: failure.parseErrors + 1 };
+          failure = responseFailure(
+            failure, "parse", "Malformed JSON response", response, attempt,
+          );
           if (attempt < maxAttempts) continue;
           break;
         }
@@ -1272,19 +1370,11 @@ export async function executeBridgeOperation(
           transport: { kind: "playwright_chrome", headless: true },
         };
       }
-      const retryAfter = Number(response.retryAfter);
-      if (attempt < maxAttempts) {
-        await sleep(Number.isFinite(retryAfter) && retryAfter > 0
-          ? retryAfter * 1000
-          : 500 * (2 ** (attempt - 1)));
-      }
-    } catch (error) {
-      failure = {
-        ...failure,
-        kind: "network",
-        message: error instanceof Error ? error.message : String(error),
-      };
-      if (attempt < maxAttempts) await sleep(500 * (2 ** (attempt - 1)));
+    const retryAfter = Number(response.retryAfter);
+    if (attempt < maxAttempts) {
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : 500 * (2 ** (attempt - 1)));
     }
   }
   const submitted = await request("POST", "/api/genealogy/wikitree/bridge/submit", {
