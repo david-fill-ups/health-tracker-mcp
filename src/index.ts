@@ -1840,7 +1840,7 @@ server.tool(
   "start_wikitree_match_job",
   "Start a persistent background matching job. Searches all pending queue entries, " +
     "scores candidates, and optionally enriches top candidates with WikiTree relationship data. " +
-    "Returns immediately with job status; call drain_wikitree_match_job to process it.",
+    "Production uses an explicit local administrative worker; hosted start returns local_worker_required.",
   {
     enrichment: z.boolean().optional().describe("Enable candidate enrichment via WikiTree relationship API (default: true)"),
     enrichmentTopN: z.number().optional().describe("Number of top candidates to enrich (default: 3, max: 10)."),
@@ -1855,9 +1855,8 @@ server.tool(
 server.tool(
   "drain_wikitree_match_job",
   "Process one batch of a running WikiTree matching job synchronously. " +
-    "Returns { continue, batchProcessed, status, jobId }. " +
-    "Call repeatedly until continue=false to drive a job to completion. " +
-    "A timed-out call may still finish server-side; poll status before retrying.",
+    "Production uses an explicit local administrative worker; hosted drain returns " +
+    "local_worker_required before claiming queue rows.",
   {
     jobId: z.string().describe("Job ID to drain"),
   },
