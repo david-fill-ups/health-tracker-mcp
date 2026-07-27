@@ -171,6 +171,15 @@ describe("dual authentication", () => {
     });
   });
 
+  it("assigns targeted WikiTree graph expansion an explicit destructive genealogy policy", () => {
+    expect(requireToolPolicy("expand_wikitree_graph")).toMatchObject({
+      domain: "genealogy",
+      impact: "destructive",
+      requiredScopes: ["genealogy:destructive"],
+      hostedEnabled: false,
+    });
+  });
+
   it("isolates concurrent request state and ignores caller identity fields", async () => {
     const makeContext = (id: string) => ({
       auth: { method: "oauth_bearer" as const, principal: id, internalUserId: id, scopes: new Set<string>(), activeProfileId: id },
