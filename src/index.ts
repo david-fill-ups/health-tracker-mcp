@@ -1869,6 +1869,18 @@ server.tool(
 );
 
 server.tool(
+  "reset_wikitree_manifest",
+  "Reset only an explicit frozen set of unchanged no_match rows. The operation aborts atomically if any row no longer has the supplied updatedAt value.",
+  {
+    manifest: z.array(z.object({
+      personId: z.string(),
+      updatedAt: z.string().datetime(),
+    })).min(1).max(500),
+  },
+  async ({ manifest }) => ok(await client.resetWikiTreeManifest(manifest)),
+);
+
+server.tool(
   "expand_wikitree_graph",
   "Run a strictly targeted WikiTree graph operation through the local transport. " +
     "Production retains graph reconciliation, scoring, assignment, and persistence.",

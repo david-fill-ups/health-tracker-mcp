@@ -1117,6 +1117,12 @@ export async function resetWikiTreeNonFinal(): Promise<unknown> {
   return request("POST", "/api/genealogy/wikitree/queue/reset", { extended: true });
 }
 
+export async function resetWikiTreeManifest(
+  manifest: Array<{ personId: string; updatedAt: string }>,
+): Promise<unknown> {
+  return request("POST", "/api/genealogy/wikitree/queue/reset", { manifest });
+}
+
 // ---------------------------------------------------------------------------
 // WikiTree Matching Jobs
 // ---------------------------------------------------------------------------
