@@ -128,10 +128,12 @@ export class LocalApiCredentialProvider implements ApiCredentialProvider {
   }
 }
 
-export class OAuthPassthroughCredentialProvider implements ApiCredentialProvider {
-  async getAuthorization(context: AuthContext): Promise<string> {
-    if (!context.accessToken) throw new AuthError("OAuth access token unavailable", 401);
-    return `Bearer ${context.accessToken}`;
+export class HostedApiKeyCredentialProvider implements ApiCredentialProvider {
+  async getAuthorization(_context: AuthContext): Promise<string> {
+    // The Claude-to-MCP OAuth token is audience-bound to this MCP resource and
+    // must never be forwarded to an upstream API. Hosted deployments use a
+    // separate, least-privilege Health Tracker PAT for the downstream hop.
+    return `Bearer ${required("HEALTH_TRACKER_HOSTED_API_KEY")}`;
   }
 }
 
@@ -177,5 +179,5 @@ export function createAuthenticator(expectedMode?: AuthMode): Authenticator {
 export function createCredentialProvider(expectedMode?: AuthMode): ApiCredentialProvider {
   const mode = getAuthMode();
   if (expectedMode && mode !== expectedMode) throw new Error(`Expected AUTH_MODE=${expectedMode}, received ${mode}`);
-  return mode === "oauth_bearer" ? new OAuthPassthroughCredentialProvider() : new LocalApiCredentialProvider();
+  return mode === "oauth_bearer" ? new HostedApiKeyCredentialProvider() : new LocalApiCredentialProvider();
 }

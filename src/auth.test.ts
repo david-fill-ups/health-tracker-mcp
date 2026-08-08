@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import {
   Auth0BearerAuthenticator,
-  OAuthPassthroughCredentialProvider,
+  HostedApiKeyCredentialProvider,
   LocalApiCredentialProvider,
   LocalApiKeyAuthenticator,
   PolicyAuthorizer,
@@ -43,6 +43,7 @@ describe("dual authentication", () => {
       OAUTH_ALLOWED_SUB: subject,
       HEALTH_TRACKER_INTERNAL_USER_ID: "internal-user",
       HEALTH_TRACKER_API_KEY: "ht_local",
+      HEALTH_TRACKER_HOSTED_API_KEY: "ht_hosted",
       LOCAL_INTERNAL_USER_ID: "local-internal-user",
     });
   });
@@ -117,16 +118,16 @@ describe("dual authentication", () => {
         principal: "hosted",
         internalUserId: "internal-user",
         scopes: new Set(["health:read"]),
-        accessToken: "oauth-token",
+        accessToken: "claude-oauth-token",
         activeProfileId: "default-profile",
       },
-      credentials: new OAuthPassthroughCredentialProvider(),
+      credentials: new HostedApiKeyCredentialProvider(),
     };
     await runWithRequestContext(context, () => client.getProfile("explicit-profile"));
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("/api/profiles/explicit-profile");
     expect(String(url)).not.toContain("default-profile");
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer oauth-token");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ht_hosted");
     fetchMock.mockRestore();
   });
 
@@ -134,11 +135,11 @@ describe("dual authentication", () => {
     await expect(new Auth0BearerAuthenticator().authenticate({})).rejects.toThrow("Missing bearer access token");
   });
 
-  it("hosted credentials cannot fall back to the local API key", async () => {
+  it("uses a distinct hosted API credential and never forwards the Claude OAuth token", async () => {
     const hosted = { method: "oauth_bearer" as const, principal: "hosted", internalUserId: "internal-user", scopes: new Set<string>() };
-    await expect(new OAuthPassthroughCredentialProvider().getAuthorization(hosted)).rejects.toThrow("OAuth access token unavailable");
+    expect(await new HostedApiKeyCredentialProvider().getAuthorization(hosted)).toBe("Bearer ht_hosted");
     process.env.AUTH_MODE = "oauth_bearer";
-    expect(createCredentialProvider("oauth_bearer")).toBeInstanceOf(OAuthPassthroughCredentialProvider);
+    expect(createCredentialProvider("oauth_bearer")).toBeInstanceOf(HostedApiKeyCredentialProvider);
     expect(() => createCredentialProvider("local_api_key")).toThrow("Expected AUTH_MODE=local_api_key");
     process.env.AUTH_MODE = "local_api_key";
   });

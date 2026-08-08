@@ -6,8 +6,23 @@ import { createHealthTrackerServer } from "./index.js";
 import { runWithRequestContext } from "./request-context.js";
 
 function challenge(): string {
-  const publicUrl = process.env.MCP_PUBLIC_URL || "http://localhost:3001";
-  return `Bearer resource_metadata="${publicUrl}/.well-known/oauth-protected-resource"`;
+  return `Bearer resource_metadata="${publicBaseUrl()}/.well-known/oauth-protected-resource"`;
+}
+
+function publicBaseUrl(publicUrl = process.env.MCP_PUBLIC_URL || "http://localhost:3001"): string {
+  return publicUrl.replace(/\/+$/, "");
+}
+
+export function mcpResourceUrl(publicUrl?: string): string {
+  return `${publicBaseUrl(publicUrl)}/mcp`;
+}
+
+export function assertHostedResourceConfiguration(): void {
+  const audience = process.env.OAUTH_AUDIENCE?.trim();
+  const resource = mcpResourceUrl();
+  if (audience !== resource) {
+    throw new Error(`OAUTH_AUDIENCE must equal the canonical MCP resource URL: ${resource}`);
+  }
 }
 
 export async function handleMcpRequest(request: Request): Promise<Response> {
@@ -16,6 +31,7 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   }
   try {
     assertRuntimeMode("streamable_http", "oauth_bearer");
+    assertHostedResourceConfiguration();
     const auth = await createAuthenticator("oauth_bearer").authenticate({ authorization: request.headers.get("authorization") });
     const credentials = createCredentialProvider("oauth_bearer");
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -43,6 +59,7 @@ export async function handleMcpNodeRequest(
 ): Promise<void> {
   try {
     assertRuntimeMode("streamable_http", "oauth_bearer");
+    assertHostedResourceConfiguration();
     const auth = await createAuthenticator("oauth_bearer").authenticate({ authorization: request.headers.authorization });
     const credentials = createCredentialProvider("oauth_bearer");
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
@@ -61,7 +78,7 @@ export async function handleMcpNodeRequest(
 }
 
 export function protectedResourceMetadata(): Response {
-  const resource = process.env.MCP_PUBLIC_URL || "http://localhost:3001";
+  const resource = mcpResourceUrl();
   const issuer = process.env.OAUTH_ISSUER;
   if (!issuer) return Response.json({ error: "OAUTH_ISSUER is not configured" }, { status: 500 });
   return Response.json({ resource, authorization_servers: [issuer], scopes_supported: [

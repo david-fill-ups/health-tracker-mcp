@@ -32,16 +32,20 @@ AUTH_MODE=oauth_bearer
 MCP_PUBLIC_URL=https://<project>.vercel.app
 HEALTH_TRACKER_URL=https://<health-tracker-project>.vercel.app
 OAUTH_ISSUER=https://<tenant>.us.auth0.com/
-OAUTH_AUDIENCE=https://mcp.health-tracker.example
+OAUTH_AUDIENCE=https://<project>.vercel.app/mcp
 OAUTH_JWKS_URI=https://<tenant>.us.auth0.com/.well-known/jwks.json
 OAUTH_ALLOWED_SUB=google-oauth2|<immutable-auth0-sub>
 HEALTH_TRACKER_INTERNAL_USER_ID=<health-tracker-user-id>
+HEALTH_TRACKER_HOSTED_API_KEY=ht_<dedicated-hosted-pat>
 DEFAULT_PROFILE_ID=<optional-initial-profile-id>
 OAUTH_CLOCK_TOLERANCE_SECONDS=60
 AUTH_LOG_HMAC_KEY=<32-or-more-random-bytes>
 ```
 
-Do not set `HEALTH_TRACKER_API_KEY` in hosted mode. The validated OAuth access token is forwarded to the API.
+Do not set `HEALTH_TRACKER_API_KEY` in hosted mode. `HEALTH_TRACKER_HOSTED_API_KEY`
+is a separate, least-privilege Health Tracker personal access token used only for the
+MCP-to-API hop. The validated Claude OAuth access token is audience-bound to `/mcp`
+and is never forwarded to the Health Tracker API.
 Generate `AUTH_LOG_HMAC_KEY` independently (for example, 32 random bytes encoded as base64). It pseudonymizes the Auth0 principal in audit logs and must not be shared with the API rate-limit key.
 
 Deploy from this directory with `vercel`, choose a new project, configure the variables above, then run `vercel --prod`. No deployment is attempted automatically without an authenticated Vercel CLI and configured Auth0 tenant.
@@ -49,34 +53,27 @@ Deploy from this directory with `vercel`, choose a new project, configure the va
 ## Auth0 configuration
 
 1. Create or select an Auth0 tenant and enable the Google social connection for the application.
-2. Create an Auth0 API with identifier exactly equal to `OAUTH_AUDIENCE`, signing algorithm RS256, and RBAC enabled. Enable adding permissions to the access token.
+2. Create an Auth0 API with identifier exactly equal to the public MCP endpoint (for example, `https://<project>.vercel.app/mcp`) and `OAUTH_AUDIENCE`, signing algorithm RS256, and RBAC enabled. Enable adding permissions to the access token. In Auth0 tenant Settings → Advanced, enable the Resource Parameter Compatibility Profile so MCP's RFC 8707 `resource` parameter selects this API.
 3. Add permissions `health:read`, `health:write`, `health:destructive`, `genealogy:read`, `genealogy:write`, `genealogy:destructive`, and the corresponding `system:*` permissions if needed.
-4. Create a regular web application for the ChatGPT OAuth client. Use Authorization Code with PKCE and configure the callback URL displayed by ChatGPT when creating the connector.
+4. Create a regular web application for Claude. Use Authorization Code with PKCE and add `https://claude.ai/api/mcp/auth_callback` to Allowed Callback URLs.
 5. Authorize only the intended Google-backed Auth0 user and record the immutable Auth0 `sub` as `OAUTH_ALLOWED_SUB`. Do not use email as the allowlist key.
 6. Use short-lived access tokens. Configure the Health Tracker API with the same issuer, audience, allowed subject, and internal user mapping.
 
-## Health Tracker API variables
+## Health Tracker API credential
 
-```dotenv
-OAUTH_ISSUER=https://<tenant>.us.auth0.com/
-OAUTH_AUDIENCE=https://mcp.health-tracker.example
-OAUTH_JWKS_URI=https://<tenant>.us.auth0.com/.well-known/jwks.json
-OAUTH_ALLOWED_SUB=google-oauth2|<immutable-auth0-sub>
-OAUTH_INTERNAL_USER_ID=<health-tracker-user-id>
-OAUTH_CLOCK_TOLERANCE_SECONDS=60
-RATE_LIMIT_HMAC_KEY=<32-or-more-random-bytes>
-```
+Create a dedicated PAT in Health Tracker for the hosted MCP and store it only as
+`HEALTH_TRACKER_HOSTED_API_KEY` in the MCP deployment. The API continues to derive
+the authoritative user and profile permissions from that PAT. Revoke this PAT to
+cut off the MCP's downstream access. The Health Tracker API does not need to accept
+the Claude/Auth0 token.
 
-Existing database-backed personal access tokens remain accepted. OAuth JWTs are independently checked for signature, issuer, audience, time validity, allowlisted subject, internal-user mapping, and method/path scope. Profile and entity permission checks remain in force.
+## Claude custom connector
 
-## ChatGPT custom app
-
-1. In ChatGPT Settings, enable Developer mode.
-2. Create a custom connector/app using `https://<project>.vercel.app/mcp`.
-3. Choose OAuth and enter the Auth0 authorization URL, token URL, client ID, and client secret from the Auth0 application.
-4. Add the exact ChatGPT callback URL to Auth0 Allowed Callback URLs.
-5. Request only the scopes needed initially, preferably `health:read genealogy:read`.
-6. Complete Google sign-in and verify that an unapproved Google/Auth0 user receives `403`.
+1. On claude.ai, open Settings → Connectors and add a custom connector using `https://<project>.vercel.app/mcp`.
+2. Select OAuth and enter the Auth0 client ID and client secret if prompted.
+3. Request only the scopes needed initially, preferably `health:read genealogy:read`.
+4. Complete Google sign-in and verify that an unapproved Google/Auth0 user receives `403`.
+5. After it is connected on the web, enable the connector in a Claude iOS or Android conversation.
 
 ## Verification
 
@@ -127,7 +124,10 @@ Example:
 
 For a hosted local smoke test, set hosted variables against a test Auth0 tenant, run `vercel dev`, and connect MCP Inspector to `http://localhost:3000/mcp` with `Authorization: Bearer <test-access-token>`. Verify initialization, `tools/list`, a read tool, a missing-scope denial, and a disabled destructive-tool denial.
 
-After deployment, repeat against `https://<project>.vercel.app/mcp`, check `/.well-known/oauth-protected-resource`, then confirm the Health Tracker audit trail records the mapped internal user. Never paste production tokens into shell history or logs.
+After deployment, repeat against `https://<project>.vercel.app/mcp`, check that
+`/.well-known/oauth-protected-resource` reports that exact `/mcp` URL as `resource`,
+then confirm the Health Tracker audit trail records the user belonging to the dedicated
+hosted PAT. Never paste production tokens into shell history or logs.
 
 Destructive, access-administration, import, reset, and long-running job-control tools are disabled in hosted mode by default. Long-running genealogy state already resides in the Health Tracker database; hosted execution must use a separately scheduled durable worker before those start/resume tools are enabled.
 
@@ -139,8 +139,8 @@ Destructive, access-administration, import, reset, and long-running job-control 
 
 ## Manual deployment runbook
 
-1. In the Auth0 dashboard, configure the tenant, Google connection, API audience, RS256, scopes, and ChatGPT callback URL.
-2. In the Health Tracker Vercel project, configure OAuth validation, internal-user mapping, and `RATE_LIMIT_HMAC_KEY`, then deploy Health Tracker.
-3. In the MCP Vercel project, configure hosted transport and OAuth variables. Set `DEFAULT_PROFILE_ID` only when an initial selection is useful; do not treat it as authorization. Migrate any existing `HOSTED_PROFILE_ID` value to `DEFAULT_PROFILE_ID`.
+1. In the Auth0 dashboard, configure the tenant, Google connection, Resource Parameter Compatibility Profile, `/mcp` API audience, RS256, scopes, and Claude callback URL.
+2. In Health Tracker, issue a dedicated least-privilege PAT for the hosted MCP.
+3. In the MCP Vercel project, configure hosted transport, OAuth variables, and `HEALTH_TRACKER_HOSTED_API_KEY`. Set `DEFAULT_PROFILE_ID` only when an initial selection is useful; do not treat it as authorization. Migrate any existing `HOSTED_PROFILE_ID` value to `DEFAULT_PROFILE_ID`.
 4. Deploy the MCP and verify `/mcp`, protected-resource metadata, the unauthenticated challenge, and read-only OAuth calls.
-5. Add the `/mcp` URL as a ChatGPT custom app, complete Google sign-in, test RBAC-filtered reads, review redacted logs, and grant write scopes only after manual review.
+5. Add the `/mcp` URL as a Claude custom connector, complete Google sign-in, test PAT-authorized reads, review redacted logs, and grant write scopes only after manual review.
