@@ -274,6 +274,7 @@ server.tool(
     diagnosisDate: z.string().optional().describe("Date of diagnosis (YYYY-MM-DD)"),
     status: z.enum(["ACTIVE", "RESOLVED", "MONITORING", "BENIGN"]).optional().describe("Condition status"),
     notes: z.string().optional().describe("Notes"),
+    visitId: z.string().optional().describe("Visit/encounter ID"),
   },
   async (args) =>
     ok(await client.createCondition({ profileId: pid(), ...args })),
@@ -295,6 +296,7 @@ server.tool(
     diagnosisDate: z.string().optional().describe("Date of diagnosis"),
     status: z.enum(["ACTIVE", "RESOLVED", "MONITORING", "BENIGN"]).optional().describe("Condition status"),
     notes: z.string().optional().describe("Notes"),
+    visitId: z.string().nullable().optional().describe("Visit/encounter ID"),
   },
   async ({ id, ...rest }) => ok(await client.updateCondition(id, clean(rest))),
 );
@@ -383,6 +385,14 @@ server.tool(
     endDate: z.string().optional().describe("End date (YYYY-MM-DD)"),
     instructions: z.string().optional().describe("Special instructions"),
     active: z.boolean().optional().describe("Whether currently active"),
+    purpose: z.string().optional().describe("Condition or purpose"),
+    schedule: z.string().optional().describe("Structured or human-readable schedule"),
+    refillDueAt: z.string().optional().describe("Refill due date"),
+    quantityRemaining: z.number().optional().describe("Quantity remaining"),
+    stoppedReason: z.string().optional().describe("Reason stopped"),
+    sideEffects: z.string().optional().describe("Observed side effects"),
+    visitId: z.string().optional().describe("Originating visit ID"),
+    conditionIds: z.array(z.string()).optional().describe("Linked condition IDs"),
   },
   async (args) =>
     ok(await client.createMedication({ profileId: pid(), ...args })),
@@ -409,6 +419,10 @@ server.tool(
     endDate: z.string().optional().describe("End date"),
     instructions: z.string().optional().describe("Instructions"),
     active: z.boolean().optional().describe("Active status"),
+    purpose: z.string().nullable().optional(), schedule: z.string().nullable().optional(),
+    refillDueAt: z.string().nullable().optional(), quantityRemaining: z.number().nullable().optional(),
+    stoppedReason: z.string().nullable().optional(), sideEffects: z.string().nullable().optional(),
+    visitId: z.string().nullable().optional(), conditionIds: z.array(z.string()).optional(),
   },
   async ({ id, ...rest }) => ok(await client.updateMedication(id, clean(rest))),
 );
@@ -677,6 +691,7 @@ server.tool(
     unit: z.string().describe("Unit of measurement (e.g. lbs, mmHg, bpm)"),
     measuredAt: z.string().describe("When the measurement was taken (ISO 8601)"),
     notes: z.string().optional().describe("Notes"),
+    visitId: z.string().optional().describe("Visit/encounter ID"),
   },
   async (args) =>
     ok(await client.createHealthMetric({ profileId: pid(), ...args })),
@@ -699,6 +714,7 @@ server.tool(
     unit: z.string().optional().describe("Unit"),
     measuredAt: z.string().optional().describe("Measurement time"),
     notes: z.string().optional().describe("Notes"),
+    visitId: z.string().nullable().optional().describe("Visit/encounter ID"),
   },
   async ({ id, ...rest }) => ok(await client.updateHealthMetric(id, clean(rest))),
 );
@@ -1508,12 +1524,12 @@ server.tool(
 server.tool(
   "create_external_identity",
   "Link a person to an identity on an external genealogy provider. Each person may have at most one identity per provider. " +
-    "Providers: familysearch, findagrave, wikitree, myheritage, ancestry.",
+    "Providers: familysearch, findagrave, wikitree. Find a Grave is manual-link only.",
   {
     personId: z.string().describe("Person ID"),
     provider: z
       .string()
-      .describe("Provider name: familysearch, findagrave, wikitree, myheritage, ancestry"),
+      .describe("Provider name: familysearch, findagrave, or wikitree"),
     externalId: z.string().describe("Provider-specific person/profile ID"),
     externalUrl: z
       .string()
@@ -1722,6 +1738,44 @@ server.tool(
   {},
   async () => ok(await client.getProviderCapabilities()),
 );
+server.tool("get_genealogy_matching", "Read provider-specific matching queue state and counts without starting work.", { profileId: z.string(), provider: z.enum(["familysearch", "wikitree"]).optional() }, async ({ profileId, provider }) => ok(await client.getGenealogyMatching(profileId, provider)));
+server.tool("get_familysearch_connection", "Read profile-scoped FamilySearch connection status. Tokens are never exposed.", { profileId: z.string() }, async ({ profileId }) => ok(await client.getFamilySearchConnection(profileId)));
+
+server.tool(
+  "initialize_familysearch_matching",
+  "Create missing FamilySearch matching-queue entries for every person owned by a profile. This does not contact FamilySearch or link anyone.",
+  { profileId: z.string().describe("Profile whose people should be queued") },
+  async ({ profileId }) => ok(await client.initializeFamilySearchMatching(profileId)),
+);
+
+server.tool(
+  "run_familysearch_matching",
+  "Search FamilySearch for all pending or failed queue entries in a profile and score the candidates. Review results with get_genealogy_matching before linking.",
+  { profileId: z.string().describe("Profile whose pending FamilySearch searches should run") },
+  async ({ profileId }) => ok(await client.runFamilySearchMatching(profileId)),
+);
+
+server.tool(
+  "link_familysearch_candidate",
+  "Link a person to a FamilySearch candidate previously returned by the matching queue. The queue ID and FamilySearch person ID must identify the same stored candidate.",
+  {
+    profileId: z.string().describe("Profile that owns the queued person"),
+    queueId: z.string().describe("FamilySearch matching-queue entry ID"),
+    familySearchId: z.string().describe("FamilySearch person ID from that queue entry (for example, KW8W-RF8)"),
+  },
+  async ({ profileId, queueId, familySearchId }) => ok(await client.decideFamilySearchMatch({ profileId, queueId, externalId: familySearchId, action: "link" })),
+);
+
+server.tool(
+  "reject_familysearch_candidate",
+  "Reject a FamilySearch candidate previously returned by the matching queue and add its person ID to that entry's ignored IDs.",
+  {
+    profileId: z.string().describe("Profile that owns the queued person"),
+    queueId: z.string().describe("FamilySearch matching-queue entry ID"),
+    familySearchId: z.string().describe("FamilySearch person ID from that queue entry"),
+  },
+  async ({ profileId, queueId, familySearchId }) => ok(await client.decideFamilySearchMatch({ profileId, queueId, externalId: familySearchId, action: "reject" })),
+);
 
 server.tool(
   "wikitree_search",
@@ -1778,23 +1832,6 @@ server.tool(
 );
 
 server.tool(
-  "search_wikitree_candidates",
-  "Search WikiTree for candidates matching persons in the queue. " +
-    "If personId is provided, searches for a single person. " +
-    "If no personId, searches all pending entries (bulk search). " +
-    "Supports custom search queries to override automatic search parameters.",
-  {
-    personId: z.string().optional().describe("Person ID to search for (omit for bulk search)"),
-    firstName: z.string().optional().describe("Override first name for search"),
-    lastName: z.string().optional().describe("Override last name for search"),
-    birthDate: z.string().optional().describe("Override birth date for search (YYYY or YYYY-MM-DD)"),
-    deathDate: z.string().optional().describe("Override death date for search"),
-    wikiTreeId: z.string().optional().describe("Look up a specific WikiTree ID or URL"),
-  },
-  async (args) => ok(await client.searchWikiTreeCandidates(args)),
-);
-
-server.tool(
   "link_wikitree_candidate",
   "Link a WikiTree candidate to a person by creating an ExternalIdentity. " +
     "The user must explicitly call this - no automatic linking occurs.",
@@ -1816,22 +1853,6 @@ server.tool(
   },
   async ({ personId, wikiTreeId }) =>
     ok(await client.rejectWikiTreeCandidate(personId, wikiTreeId)),
-);
-
-server.tool(
-  "reset_wikitree_no_matches",
-  "Reset all no_match entries back to pending for re-searching. " +
-    "Use this after fixing search parameters or after the search implementation has been updated.",
-  {},
-  async () => ok(await client.resetWikiTreeNoMatches()),
-);
-
-server.tool(
-  "reset_wikitree_non_final",
-  "Extended reset: reset strong_match, ambiguous, no_match, and error entries back to pending. " +
-    "Preserves linked and rejected entries. Use before starting a fresh A/B comparison run.",
-  {},
-  async () => ok(await client.resetWikiTreeNonFinal()),
 );
 
 // ==========================================================================
@@ -1958,6 +1979,29 @@ server.tool(
 // ==========================================================================
 // Start server
 // ==========================================================================
+
+// Integrated health workspace
+server.tool("list_health_tasks", "List actionable health tasks.", {}, async () => ok(await client.listHealthTasks()));
+server.tool("create_health_task", "Create a health task.", { title:z.string(), details:z.string().optional(), category:z.string().optional(), priority:z.string().optional(), dueAt:z.string().optional() }, async args => ok(await client.createHealthTask({profileId:pid(),...args})));
+server.tool("update_health_task", "Update, complete, or snooze a health task.", { id:z.string(), title:z.string().optional(), details:z.string().optional(), category:z.string().optional(), priority:z.string().optional(), status:z.enum(["OPEN","SNOOZED","COMPLETED","DISMISSED"]).optional(), dueAt:z.string().nullable().optional(), snoozedUntil:z.string().nullable().optional() }, async ({id,...data}) => ok(await client.updateHealthTask(id,clean(data))));
+server.tool("list_symptoms", "List symptom entries and linked clinical context.", {}, async () => ok(await client.listSymptoms()));
+const symptomFields={symptom:z.string(),severity:z.number().int().min(1).max(10).optional(),startedAt:z.string(),endedAt:z.string().nullable().optional(),tags:z.array(z.string()).optional(),notes:z.string().nullable().optional(),visitId:z.string().nullable().optional(),conditionId:z.string().nullable().optional(),medicationId:z.string().nullable().optional()};
+server.tool("create_symptom", "Record a symptom.", symptomFields, async args => ok(await client.createSymptom({profileId:pid(),...args})));
+server.tool("update_symptom", "Update a symptom entry.", {id:z.string(),...Object.fromEntries(Object.entries(symptomFields).map(([k,v])=>[k,v.optional()]))}, async ({id,...data}) => ok(await client.updateSymptom(id,clean(data))));
+server.tool("delete_symptom", "Permanently delete a symptom entry.", {id:z.string()}, async ({id}) => ok(await client.deleteSymptom(id)));
+server.tool("list_preventive_care", "List preventive-care rules and due dates.", {}, async () => ok(await client.listPreventiveCare()));
+server.tool("create_preventive_care", "Create preventive-care guidance or install defaults.", {installDefaults:z.boolean().optional(),name:z.string().optional(),specialty:z.string().optional(),visitType:z.string().optional(),intervalMonths:z.number().int().positive().optional(),lastCompletedAt:z.string().optional(),nextDueAt:z.string().optional(),notes:z.string().optional()}, async args => ok(await client.createPreventiveCare({profileId:pid(),...args})));
+server.tool("update_preventive_care", "Update or complete a preventive-care rule.", {id:z.string(),complete:z.boolean().optional(),name:z.string().optional(),specialty:z.string().nullable().optional(),visitType:z.string().nullable().optional(),intervalMonths:z.number().int().positive().optional(),lastCompletedAt:z.string().nullable().optional(),nextDueAt:z.string().nullable().optional(),notes:z.string().nullable().optional(),active:z.boolean().optional()}, async ({id,...data}) => ok(await client.updatePreventiveCare(id,clean(data))));
+server.tool("delete_preventive_care", "Permanently delete a preventive-care rule.", {id:z.string()}, async ({id}) => ok(await client.deletePreventiveCare(id)));
+server.tool("list_metric_panels", "List structured lab panels and results.", {}, async () => ok(await client.listMetricPanels()));
+server.tool("create_metric_panel", "Create a lab panel with result metrics.", {name:z.string(),collectedAt:z.string(),orderingDoctor:z.string().optional(),laboratory:z.string().optional(),specimen:z.string().optional(),fasting:z.boolean().optional(),sourceDocument:z.string().optional(),notes:z.string().optional(),metrics:z.array(z.object({metricType:z.string(),value:z.number(),unit:z.string(),referenceMin:z.number().optional(),referenceMax:z.number().optional(),referenceText:z.string().optional(),labFlag:z.string().optional()})).optional()}, async args => ok(await client.createMetricPanel({profileId:pid(),...args})));
+server.tool("get_health_summary", "Get a concise current health summary.", {}, async () => ok(await client.getHealthSummary()));
+server.tool("get_health_timeline", "Get the unified health timeline.", {limit:z.string().optional()}, async ({limit}) => ok(await client.getHealthTimeline(limit)));
+server.tool("get_care_directory", "Get clinicians, facilities, portals, and active insurance.", {}, async () => ok(await client.getCareDirectory()));
+server.tool("search_health", "Search the active profile's health records.", {query:z.string()}, async ({query}) => ok(await client.searchHealth(query)));
+server.tool("get_health_workspace", "Get the integrated workspace overview.", {}, async () => ok(await client.getWorkspace()));
+server.tool("get_visit_encounter", "Get a visit with linked conditions, medications, metrics, tasks, symptoms, and attachments.", {id:z.string()}, async ({id}) => ok(await client.getVisitEncounter(id)));
+server.tool("bulk_update_visits", "Update status for 1-500 visits.", {ids:z.array(z.string()).min(1).max(500),status:z.enum(["PENDING","SCHEDULED","COMPLETED","CANCELLED"])}, async ({ids,status}) => ok(await client.bulkUpdateVisits({profileId:pid(),ids,action:"status",status})));
 
 return rawServer;
 }

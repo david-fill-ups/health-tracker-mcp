@@ -227,6 +227,7 @@ export async function createCondition(data: {
   diagnosisDate?: string;
   status?: string;
   notes?: string;
+  visitId?: string;
 }): Promise<unknown> {
   return request("POST", "/api/conditions", data);
 }
@@ -299,6 +300,14 @@ export async function createMedication(data: {
   endDate?: string;
   instructions?: string;
   active?: boolean;
+  purpose?: string;
+  schedule?: string;
+  refillDueAt?: string;
+  quantityRemaining?: number;
+  stoppedReason?: string;
+  sideEffects?: string;
+  visitId?: string;
+  conditionIds?: string[];
 }): Promise<unknown> {
   return request("POST", "/api/medications", data);
 }
@@ -507,6 +516,7 @@ export async function createHealthMetric(data: {
   unit: string;
   measuredAt: string;
   notes?: string;
+  visitId?: string;
 }): Promise<unknown> {
   return request("POST", "/api/health-metrics", data);
 }
@@ -1036,6 +1046,33 @@ export async function applySyncChanges(
 export async function getProviderCapabilities(): Promise<unknown> {
   return request("GET", "/api/genealogy/providers");
 }
+export async function getGenealogyMatching(profileId: string, provider?: string): Promise<unknown> { const params = new URLSearchParams({ profileId }); if (provider) params.set("provider", provider); return request("GET", `/api/genealogy/matching?${params}`); }
+export async function getFamilySearchConnection(profileId: string): Promise<unknown> { return request("GET", `/api/genealogy/familysearch/connection?profileId=${encodeURIComponent(profileId)}`); }
+
+export async function initializeFamilySearchMatching(profileId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/matching", {
+    action: "initialize",
+    profileId,
+    provider: "familysearch",
+  });
+}
+
+export async function runFamilySearchMatching(profileId: string): Promise<unknown> {
+  return request("POST", "/api/genealogy/matching", {
+    action: "run",
+    profileId,
+    provider: "familysearch",
+  });
+}
+
+export async function decideFamilySearchMatch(input: {
+  profileId: string;
+  queueId: string;
+  externalId: string;
+  action: "link" | "reject";
+}): Promise<unknown> {
+  return request("POST", "/api/genealogy/matching", input);
+}
 
 export async function searchWikiTree(params: {
   firstName?: string;
@@ -1069,29 +1106,6 @@ export async function buildWikiTreeMatchQueue(): Promise<unknown> {
   return request("POST", "/api/genealogy/wikitree/queue");
 }
 
-export async function searchWikiTreeCandidates(opts?: {
-  personId?: string;
-  firstName?: string;
-  lastName?: string;
-  birthDate?: string;
-  deathDate?: string;
-  wikiTreeId?: string;
-}): Promise<unknown> {
-  if (opts && (opts.firstName || opts.lastName || opts.birthDate || opts.deathDate || opts.wikiTreeId)) {
-    throw new Error(
-      "Custom queue-query overrides are not accepted by the local bridge; use wikitree_search or wikitree_preview for an exact ad-hoc operation.",
-    );
-  }
-  const job = await startWikiTreeMatchJob({
-    enrichment: true,
-    personIds: opts?.personId ? [opts.personId] : undefined,
-  }) as { id: string };
-  return {
-    job,
-    drain: await runWikiTreeLocalBridge(job.id),
-  };
-}
-
 export async function linkWikiTreeCandidate(
   personId: string,
   wikiTreeId: string
@@ -1110,14 +1124,6 @@ export async function rejectWikiTreeCandidate(
     personId,
     wikiTreeId,
   });
-}
-
-export async function resetWikiTreeNoMatches(): Promise<unknown> {
-  return request("POST", "/api/genealogy/wikitree/queue/reset");
-}
-
-export async function resetWikiTreeNonFinal(): Promise<unknown> {
-  return request("POST", "/api/genealogy/wikitree/queue/reset", { extended: true });
 }
 
 export async function resetWikiTreeManifest(
@@ -1513,3 +1519,25 @@ export async function onboard(data: {
 }): Promise<unknown> {
   return request("POST", "/api/onboarding", data);
 }
+
+// Integrated health workspace
+export const listHealthTasks = (): Promise<unknown> => request("GET", withProfile("/api/tasks"));
+export const createHealthTask = (data: Record<string, unknown>): Promise<unknown> => request("POST", "/api/tasks", data);
+export const updateHealthTask = (id: string, data: Record<string, unknown>): Promise<unknown> => request("PUT", withProfile(`/api/tasks/${id}`), data);
+export const listSymptoms = (): Promise<unknown> => request("GET", withProfile("/api/symptoms"));
+export const createSymptom = (data: Record<string, unknown>): Promise<unknown> => request("POST", "/api/symptoms", data);
+export const updateSymptom = (id: string, data: Record<string, unknown>): Promise<unknown> => request("PUT", withProfile(`/api/symptoms/${id}`), data);
+export const deleteSymptom = (id: string): Promise<unknown> => request("DELETE", withProfile(`/api/symptoms/${id}`));
+export const listPreventiveCare = (): Promise<unknown> => request("GET", withProfile("/api/preventive-care"));
+export const createPreventiveCare = (data: Record<string, unknown>): Promise<unknown> => request("POST", "/api/preventive-care", data);
+export const updatePreventiveCare = (id: string, data: Record<string, unknown>): Promise<unknown> => request("PUT", withProfile(`/api/preventive-care/${id}`), data);
+export const deletePreventiveCare = (id: string): Promise<unknown> => request("DELETE", withProfile(`/api/preventive-care/${id}`));
+export const listMetricPanels = (): Promise<unknown> => request("GET", withProfile("/api/metric-panels"));
+export const createMetricPanel = (data: Record<string, unknown>): Promise<unknown> => request("POST", "/api/metric-panels", data);
+export const getHealthSummary = (): Promise<unknown> => request("GET", withProfile("/api/health-summary"));
+export const getHealthTimeline = (limit?: string): Promise<unknown> => request("GET", withProfile("/api/timeline", limit ? { limit } : undefined));
+export const getCareDirectory = (): Promise<unknown> => request("GET", withProfile("/api/care-directory"));
+export const searchHealth = (q: string): Promise<unknown> => request("GET", withProfile("/api/search", { q }));
+export const getWorkspace = (): Promise<unknown> => request("GET", withProfile("/api/workspace"));
+export const getVisitEncounter = (id: string): Promise<unknown> => request("GET", withProfile(`/api/visits/${id}/encounter`));
+export const bulkUpdateVisits = (data: Record<string, unknown>): Promise<unknown> => request("POST", "/api/visits/bulk", data);

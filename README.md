@@ -1,5 +1,11 @@
 # Health Tracker MCP
 
+The integrated health workspace tools cover actionable tasks, symptoms,
+preventive-care rules, structured metric panels, health summary, unified
+timeline, care directory, profile-wide search, workspace overview, visit
+encounters, and bulk visit status updates. Medication, condition, and metric
+mutations also support encounter linkage and the richer medication fields.
+
 One codebase supports local stdio and a stateless hosted Streamable HTTP deployment.
 
 ## Local mode
