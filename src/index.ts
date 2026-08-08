@@ -484,12 +484,14 @@ server.tool(
 
 server.tool(
   "list_visits",
-  "List visits/appointments for the active profile.",
+  "List visits/appointments, newest first by default. Use limit=1 for the most recent appointment.",
   {
+    profileId: z.string().optional().describe("Profile ID; defaults to the active/default profile"),
     limit: z.string().optional().describe("Max results"),
     cursor: z.string().optional().describe("Pagination cursor"),
+    order: z.enum(["desc", "asc"]).optional().describe("Sort by visit date: desc (newest first, default) or asc"),
   },
-  async (args) => ok(await client.listVisits(clean(args) as { limit?: string; cursor?: string })),
+  async (args) => ok(await client.listVisits(clean(args) as { profileId?: string; limit?: string; cursor?: string; order?: "asc" | "desc" })),
 );
 
 server.tool(

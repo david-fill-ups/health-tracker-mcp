@@ -373,12 +373,14 @@ export async function deleteMedicationLog(
 // ---------------------------------------------------------------------------
 
 export async function listVisits(opts?: {
+  profileId?: string;
   limit?: string;
   cursor?: string;
+  order?: "asc" | "desc";
 }): Promise<unknown> {
   return request(
     "GET",
-    withProfile("/api/visits", opts as Record<string, string>),
+    withProfile("/api/visits", { order: "desc", ...opts } as Record<string, string>),
   );
 }
 
